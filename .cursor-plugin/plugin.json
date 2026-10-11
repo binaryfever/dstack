@@ -1,0 +1,8 @@
+{
+  "name": "dstack",
+  "displayName": "dstack",
+  "version": "0.1.0",
+  "description": "Build product UI from product-rules.md. A state table per screen, reuse checks, and a proposed rules edit when the same gap shows up in two screens.",
+  "license": "MIT",
+  "skills": "./skills/"
+}
