@@ -80,6 +80,7 @@ export type Finding =
 	| { type: 'parallel-name'; at: Loc; surface: string; state: UiState; name: CodeName; rule: RuleId; ruleLine: number }
 	| { type: 'unused-ref'; at: Loc; surface: string; column: UiState | 'machine'; rule: RuleId; codeName: CodeName; dir: string; ruleLine: number }
 	| { type: 'raw-token'; at: Loc; value: string; rule: RuleId; codeName: CodeName; ruleLine: number }
+	| { type: 'correction'; at: Loc; rule: RuleId; ruleLine: number; text: string; literal: string }
 	| { type: 'rules-edited'; at: Loc }
 
 export type Hit<T> = T & { table: TablePath }
@@ -122,6 +123,111 @@ export function splitLines(text: string): string[] {
 
 function ruleId(value: string): RuleId {
 	return value as RuleId
+}
+
+type ForbidLiteral = { kind: 'forbid-literal'; rule: RuleId; text: string; literals: NonEmpty<string> }
+type UncheckedCorrection = { kind: 'unchecked'; rule: RuleId; text: string; reason: string }
+type CorrectionCheck = ForbidLiteral | UncheckedCorrection
+
+const CORRECTION_BULLET = /^- ([CPT]-[a-z0-9-]+): (.+)$/
+
+function quotedLiterals(text: string): string[] {
+	const seen = new Set<string>()
+	const out: string[] = []
+	for (const match of text.matchAll(/"([^"]+)"/g)) {
+		const phrase = match[1] ?? ''
+		if (seen.has(phrase)) continue
+		seen.add(phrase)
+		out.push(phrase)
+	}
+	return out
+}
+
+function forbidLiteral(rule: RuleId, text: string): ForbidLiteral {
+	const phrases = quotedLiterals(text)
+	if (phrases.length === 0) throw new Error(`Correction ${rule} has no quoted phrase.`)
+	const [first, ...rest] = phrases
+	return { kind: 'forbid-literal', rule, text, literals: [first, ...rest] }
+}
+
+function unchecked(rule: RuleId, text: string, reason: string): UncheckedCorrection {
+	if (text.trim() === '' || reason.trim() === '') throw new Error('unchecked correction needs text and reason.')
+	return { kind: 'unchecked', rule, text, reason }
+}
+
+function buildCorrectionChecks(): readonly CorrectionCheck[] {
+	return [
+		forbidLiteral(
+			ruleId('C-empty-state'),
+			'Empty copy names what will appear here, never "No data".',
+		),
+	]
+}
+
+const CORRECTION_CHECKS: readonly CorrectionCheck[] = buildCorrectionChecks()
+
+const SCREEN_SOURCE_EXT: ReadonlySet<string> = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'])
+
+function isScreenSource(path: string): boolean {
+	const base = path.split('/').pop() ?? path
+	if (base.endsWith('.d.ts')) return false
+	if (/\.(test|spec)\./.test(base)) return false
+	for (const ext of SCREEN_SOURCE_EXT) {
+		if (base.endsWith(ext)) return true
+	}
+	return false
+}
+
+export type CorrectionDriftProblem =
+	| { type: 'no-section' }
+	| { type: 'missing-check'; rule: string; text: string }
+	| { type: 'extra-check'; rule: string; text: string }
+	| { type: 'duplicate-bullet'; rule: string; text: string }
+
+export type CorrectionDrift = { ok: true } | { ok: false; problems: readonly CorrectionDriftProblem[] }
+
+function parseSkillCorrectionBullets(skillMarkdown: string): { bullets: { rule: string; text: string }[] } | { noSection: true } {
+	const lines = splitLines(skillMarkdown)
+	let start = -1
+	for (let i = 0; i < lines.length; i++) {
+		if ((lines[i] ?? '').trim() === '## Corrections') {
+			start = i + 1
+			break
+		}
+	}
+	if (start === -1) return { noSection: true }
+	const bullets: { rule: string; text: string }[] = []
+	for (let i = start; i < lines.length; i++) {
+		const line = lines[i] ?? ''
+		if (line.trim() === '') continue
+		const match = CORRECTION_BULLET.exec(line.trim())
+		if (match == null) break
+		bullets.push({ rule: match[1] ?? '', text: (match[2] ?? '').trim() })
+	}
+	return { bullets }
+}
+
+export function correctionDrift(skillMarkdown: string): CorrectionDrift {
+	const parsed = parseSkillCorrectionBullets(skillMarkdown)
+	if ('noSection' in parsed) return { ok: false, problems: [{ type: 'no-section' }] }
+	const problems: CorrectionDriftProblem[] = []
+	const seen = new Set<string>()
+	for (const bullet of parsed.bullets) {
+		const key = `${bullet.rule}\0${bullet.text}`
+		if (seen.has(key)) problems.push({ type: 'duplicate-bullet', rule: bullet.rule, text: bullet.text })
+		seen.add(key)
+	}
+	const catalog = new Set(CORRECTION_CHECKS.map((check) => `${check.rule}\0${check.text}`))
+	const skill = new Set(parsed.bullets.map((bullet) => `${bullet.rule}\0${bullet.text}`))
+	for (const check of CORRECTION_CHECKS) {
+		const key = `${check.rule}\0${check.text}`
+		if (!skill.has(key)) problems.push({ type: 'missing-check', rule: check.rule, text: check.text })
+	}
+	for (const bullet of parsed.bullets) {
+		const key = `${bullet.rule}\0${bullet.text}`
+		if (!catalog.has(key)) problems.push({ type: 'extra-check', rule: bullet.rule, text: bullet.text })
+	}
+	return problems.length === 0 ? { ok: true } : { ok: false, problems }
 }
 
 function surfaceKind(value: string): SurfaceKind {
@@ -393,7 +499,7 @@ export function parseTable(path: TablePath, text: string): { table: StateTable; 
 				cursor += 1
 				continue
 			}
-			const match = /^- ([CPT]-[a-z0-9-]+): (.+)$/.exec(line.trim())
+			const match = CORRECTION_BULLET.exec(line.trim())
 			if (match == null) break
 			corrections.push({
 				table: path,
@@ -637,6 +743,125 @@ export function checkBranch(rules: Rules, table: StateTable, branch: BranchView)
 	return findings
 }
 
+type ScanMode =
+	| { type: 'code' }
+	| { type: 'line-comment' }
+	| { type: 'block-comment' }
+	| { type: 'string'; delimiter: "'" | '"' | '`'; start: number }
+
+function stringSpans(text: string): { start: number; end: number }[] {
+	const spans: { start: number; end: number }[] = []
+	let mode: ScanMode = { type: 'code' }
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i]
+		const next = text[i + 1]
+		if (mode.type === 'line-comment') {
+			if (ch === '\n') mode = { type: 'code' }
+			continue
+		}
+		if (mode.type === 'block-comment') {
+			if (ch === '*' && next === '/') {
+				mode = { type: 'code' }
+				i += 1
+			}
+			continue
+		}
+		if (mode.type === 'string') {
+			if (ch === '\\') {
+				i += 1
+				continue
+			}
+			if (ch === mode.delimiter) {
+				spans.push({ start: mode.start, end: i })
+				mode = { type: 'code' }
+			}
+			continue
+		}
+		if (ch === '/' && next === '/') {
+			mode = { type: 'line-comment' }
+			i += 1
+			continue
+		}
+		if (ch === '/' && next === '*') {
+			mode = { type: 'block-comment' }
+			i += 1
+			continue
+		}
+		if (ch === "'" || ch === '"' || ch === '`') {
+			mode = { type: 'string', delimiter: ch, start: i + 1 }
+		}
+	}
+	if (mode.type === 'string') spans.push({ start: mode.start, end: text.length })
+	return spans
+}
+
+function phraseHits(span: string, literal: string): number[] {
+	const pattern = new RegExp(`(?<![A-Za-z0-9])${escapeRegExp(literal)}(?![A-Za-z0-9])`, 'g')
+	const hits: number[] = []
+	for (const match of span.matchAll(pattern)) {
+		if (match.index != null) hits.push(match.index)
+	}
+	return hits
+}
+
+function lineOf(text: string, index: number): number {
+	let line = 1
+	for (let i = 0; i < index && i < text.length; i++) {
+		if (text[i] === '\n') line += 1
+	}
+	return line
+}
+
+function citedRules(table: StateTable): Set<RuleId> {
+	const cited = new Set<RuleId>()
+	for (const surface of table.surfaces) {
+		if (surface.machine != null) cited.add(surface.machine)
+		for (const [, cell] of cellList(surface)) {
+			for (const ref of cell) {
+				if (ref.type === 'rule') cited.add(ref.id)
+			}
+		}
+	}
+	return cited
+}
+
+function correctionFindings(rules: Rules, table: StateTable, screenFiles: readonly SourceFile[]): Finding[] {
+	const findings: Finding[] = []
+	const cited = citedRules(table)
+	const seen = new Set<string>()
+	for (const check of CORRECTION_CHECKS) {
+		if (check.kind === 'unchecked') continue
+		if (!cited.has(check.rule) || !rules.byId.has(check.rule)) continue
+		const rule = rules.byId.get(check.rule)
+		if (rule == null) continue
+		const ruleLine = rule.lines.heading
+		for (const file of screenFiles) {
+			if (!isScreenSource(file.path)) continue
+			for (const span of stringSpans(file.text)) {
+				const slice = file.text.slice(span.start, span.end)
+				for (const literal of check.literals) {
+					for (const hit of phraseHits(slice, literal)) {
+						const index = span.start + hit
+						const line = lineOf(file.text, index)
+						const key = `${check.rule}\0${file.path}\0${line}`
+						if (seen.has(key)) continue
+						seen.add(key)
+						findings.push({
+							type: 'correction',
+							at: { path: file.path, line },
+							rule: check.rule,
+							ruleLine,
+							text: check.text,
+							literal,
+						})
+					}
+				}
+			}
+		}
+	}
+	return findings
+}
+
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -841,6 +1066,8 @@ export function message(finding: Finding): string {
 			return `${finding.rule} (${finding.codeName}) is in the table, but no file under ${finding.dir}/ mentions ${finding.codeName}. Build with it or fix the table.`
 		case 'raw-token':
 			return `${finding.value} is ${finding.rule} (${finding.codeName}). Use the token.`
+		case 'correction':
+			return `"${finding.literal}" breaks ${finding.rule} (${RULES_PATH}:${finding.ruleLine}). ${finding.text}`
 		case 'rules-edited':
 			return 'This change edits product-rules.md and a state table. Ship the rules edit as its own change.'
 		default: {
@@ -876,6 +1103,7 @@ function findingLine(finding: Finding): string {
 				? `  ${loc(finding.at)} ${sentence}`
 				: `  ${loc(finding.at)} ${finding.surface}. ${sentence}`
 		case 'raw-token':
+		case 'correction':
 			return `  ${loc(finding.at)} ${sentence}`
 		case 'rules-edited':
 			return `  ${finding.at.path}. ${sentence}`
@@ -962,7 +1190,10 @@ export function checkScreens(input: {
 		findings.push(...parsed.findings)
 		findings.push(...checkTable(input.rules, parsed.table))
 		const branch = input.branches.get(item.path)
-		if (branch != null) findings.push(...checkBranch(input.rules, parsed.table, branch))
+		if (branch != null) {
+			findings.push(...checkBranch(input.rules, parsed.table, branch))
+			findings.push(...correctionFindings(input.rules, parsed.table, branch.screenFiles))
+		}
 	}
 	findings.sort((a, b) => (a.at.line ?? Number.MAX_SAFE_INTEGER) - (b.at.line ?? Number.MAX_SAFE_INTEGER))
 	const issues = collectIssues(input.rules, allTables)
