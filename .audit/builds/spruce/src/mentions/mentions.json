@@ -1,0 +1,36 @@
+{
+  "mentions": [
+    {
+      "id": "m-fern",
+      "authorName": "Sam Okonkwo",
+      "avatarSrc": null,
+      "excerpt": "A customer asked if the fern is pet safe. @you",
+      "ageMs": 2700000,
+      "seen": false
+    },
+    {
+      "id": "m-spruce",
+      "authorName": "Riley Chen",
+      "avatarSrc": null,
+      "excerpt": "The spruce on the front table needs a new tag. @you can you reprint it?",
+      "ageMs": 10800000,
+      "seen": false
+    },
+    {
+      "id": "m-olive",
+      "authorName": "Jules Park",
+      "avatarSrc": null,
+      "excerpt": "Moved the olive tree. @you the light note is on the card.",
+      "ageMs": 172800000,
+      "seen": false
+    },
+    {
+      "id": "m-close",
+      "authorName": "Mora Ellison",
+      "avatarSrc": null,
+      "excerpt": "Thanks for covering the closing shift.",
+      "ageMs": 1814400000,
+      "seen": true
+    }
+  ]
+}

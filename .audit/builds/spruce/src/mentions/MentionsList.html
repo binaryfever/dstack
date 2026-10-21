@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mentions</title>
+  <link rel="stylesheet" href="../tokens.css">
+  <link rel="stylesheet" href="mentions.css">
+</head>
+<body>
+  <main class="mentions-screen">
+    <header class="mentions-header">
+      <h1 id="mentions-title">Mentions</h1>
+      <p class="visually-hidden" data-unseen-label></p>
+      <div data-unseen-count></div>
+    </header>
+    <section data-mentions-list aria-labelledby="mentions-title" aria-live="polite"></section>
+  </main>
+  <script src="../components/Avatar.js"></script>
+  <script src="../components/Badge.js"></script>
+  <script src="../components/EmptyState.js"></script>
+  <script src="../components/RowSkeleton.js"></script>
+  <script src="../components/AsyncList.js"></script>
+  <script type="module" src="MentionsList.js"></script>
+</body>
+</html>
