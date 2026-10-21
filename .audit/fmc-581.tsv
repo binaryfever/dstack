@@ -12,3 +12,7 @@ ts	phase	decision	why	evidence	result
 2026-10-21T18:53:44Z	judge	Prepared sanitized Alpha and Beta trees with randomized mapping	Judge must not see skill arm	/workspace/.audit/fmc-581-blind-key.txt	ready
 2026-10-21T18:53:59Z	judge	Spawning grok-4.7-xhigh blind judge on Alpha/Beta trees	pstack arena cross-judge pool	pending	running
 2026-10-21T18:54:12Z	judge	Blind judge agent bc-374c2771-8bbb-5940-a084-ff815b127635 on grok-4.7-xhigh	Same Alpha/Beta trees; Alpha=aspen Beta=spruce key held	bc-374c2771-8bbb-5940-a084-ff815b127635	running
+2026-10-21T18:59:42Z	judge	Blind judge returned Alpha 5/6 Beta 6/6	Matches coordinator table; Alpha misses MentionsList.states.md	/workspace/.audit/fmc-581-judge.md bc-374c2771-8bbb-5940-a084-ff815b127635	agree
+2026-10-21T18:59:42Z	unblind	Alpha was aspen without skill; Beta was spruce with skill	Randomized label key	/workspace/.audit/fmc-581-blind-key.txt	spruce 6/6 aspen 5/6
+2026-10-21T18:59:42Z	recommend	Recommend keep-going under the issue gates	Skill arm 6/6 beats no-skill 5/6 with a correctly named MentionsList.states.md	/workspace/.audit/fmc-581-recommendation.md	awaiting Fred
+2026-10-21T19:00:01Z	chain	No local agent-transcripts directory in this workspace	Eval step 6 requires workspace transcripts; graded chain from file shape and dstack check instead	agent-transcripts missing	incomplete
