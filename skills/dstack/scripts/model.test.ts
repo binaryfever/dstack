@@ -12,13 +12,15 @@ import {
 	applyEdit,
 	checkScreens,
 	collectIssues,
-	correctionDrift,
+	correctionChecksFromMarkdown,
 	parseRules,
 	parseTable,
 	propose,
 	report,
+	skillCorrectionChecks,
 	tablePath,
 	type BranchView,
+	type RuleId,
 	type Source,
 	type UiState,
 } from './model.ts'
@@ -133,6 +135,12 @@ function rulesFrom(text: string) {
 }
 
 test('forbidden empty copy fails when the table cites C-empty-state', () => {
+	const loaded = skillCorrectionChecks()
+	assert.equal(loaded.ok, true)
+	if (!loaded.ok) throw new Error('skill corrections')
+	const empty = loaded.checks.find((check) => check.rule === 'C-empty-state')
+	if (empty?.kind !== 'forbid-literal') throw new Error('C-empty-state')
+	assert.ok(empty.literals.includes('No data'))
 	const screen = `export function NotificationList() {
   return (
     <AsyncList
@@ -149,13 +157,12 @@ test('forbidden empty copy fails when the table cites C-empty-state', () => {
 		target: notificationsPath,
 	})
 	const correction = value.findings.find((finding) => finding.type === 'correction')
-	assert.ok(correction)
 	assert.deepEqual(correction, {
 		type: 'correction',
 		at: { path: 'src/notifications/NotificationList.tsx', line: 4 },
 		rule: 'C-empty-state',
 		ruleLine: 12,
-		text: 'Empty copy names what will appear here, never "No data".',
+		text: empty.text,
 		literal: 'No data',
 	})
 	assert.match(report(value), /"No data" breaks C-empty-state \(product-rules\.md:12\)/)
@@ -261,11 +268,152 @@ test('each source requires its states and rejects the others', () => {
 	}
 })
 
+test('every skill correction bullet is enforced as the check it classifies to', () => {
+	const lines = readFileSync(join(import.meta.dirname, '..', 'SKILL.md'), 'utf8').split('\n')
+	const loaded = skillCorrectionChecks()
+	assert.equal(loaded.ok, true)
+	if (!loaded.ok) throw new Error('skill corrections')
+	const checks = loaded.checks
+	let cursor = lines.findIndex((line) => line.trim() === '## Corrections')
+	assert.ok(cursor >= 0)
+	cursor += 1
+	for (const check of checks) {
+		while ((lines[cursor] ?? '').trim() === '') cursor += 1
+		assert.equal((lines[cursor] ?? '').trim(), `- ${check.rule}: ${check.text}`)
+		cursor += 1
+		if (check.kind === 'unchecked') {
+			assert.equal(check.reason, 'no quoted phrase')
+			const allowed = checks.flatMap((other) =>
+				other.kind === 'forbid-literal' && other.rule === check.rule ? other.literals : [],
+			)
+			const cited = checkScreens(citing(check.rule, screenQuoting(check.text)))
+			for (const finding of cited.findings) {
+				if (finding.type !== 'correction') continue
+				assert.ok(allowed.includes(finding.literal))
+			}
+			continue
+		}
+		for (const literal of check.literals) {
+			const cited = checkScreens(citing(check.rule, screenQuoting(literal)))
+			const hit = cited.findings.find((finding) => finding.type === 'correction' && finding.literal === literal)
+			assert.ok(hit != null && hit.type === 'correction')
+			if (hit == null || hit.type !== 'correction') throw new Error('correction')
+			assert.equal(hit.rule, check.rule)
+			assert.equal(hit.text, check.text)
+			const commented = checkScreens(citing(check.rule, `// ${literal}\nexport const copy = "zz"\n`))
+			assert.equal(
+				commented.findings.some((finding) => finding.type === 'correction' && finding.literal === literal),
+				false,
+			)
+		}
+	}
+	while ((lines[cursor] ?? '').trim() === '') cursor += 1
+	assert.equal(/^- [CPT]-[a-z0-9-]+: /.test(lines[cursor] ?? ''), false)
+})
+
+function citing(rule: RuleId, screen: string) {
+	const parsed = parseRules(ruleText(rule))
+	assert.equal(parsed.ok, true)
+	if (!parsed.ok) throw new Error('rules')
+	const path = tablePath('probe.states.md')
+	return {
+		rules: parsed.rules,
+		rulesPath: RULES_PATH,
+		parsed: [{ path, text: tableCiting(rule) }],
+		branches: new Map([[path, quietBranch([{ path: 'src/probe/Probe.tsx', text: screen }])]]),
+		target: path,
+	}
+}
+
+function ruleText(id: string): string {
+	if (id.startsWith('T-')) return `### ${id} \`token.${id}\`\nValue: #000000\n`
+	if (id.startsWith('P-')) return `### ${id}\nCovers: probe\n`
+	return `### ${id} \`Probe\`\nCovers: probe\n`
+}
+
+function tableCiting(id: string): string {
+	return `| surface | kind | source | machine | empty | loading | failed | populated |
+|---|---|---|---|---|---|---|---|
+| probe | probe | static | none |  |  |  | ${id} |
+`
+}
+
+function screenQuoting(literal: string): string {
+	return `export const copy = "${literal}"\n`
+}
+
+test('correctionChecksFromMarkdown classifies quoted and unquoted bullets', () => {
+	const markdown = `## Corrections
+
+- C-probe: Never say "Nothing here".
+- C-avatar: Use a real avatar image, not a placeholder circle.
+
+`
+	const loaded = correctionChecksFromMarkdown(markdown)
+	assert.equal(loaded.ok, true)
+	if (!loaded.ok) throw new Error('load')
+	assert.equal(loaded.checks.length, 2)
+	assert.equal(loaded.checks[0]?.kind, 'forbid-literal')
+	if (loaded.checks[0]?.kind === 'forbid-literal') assert.deepEqual(loaded.checks[0].literals, ['Nothing here'])
+	assert.equal(loaded.checks[1]?.kind, 'unchecked')
+	if (loaded.checks[1]?.kind === 'unchecked') assert.equal(loaded.checks[1].reason, 'no quoted phrase')
+	const screen = `export const tip = "Use a real avatar image, not a placeholder circle."
+`
+	const cited = checkScreens(citing('C-avatar' as RuleId, screen))
+	assert.equal(cited.findings.some((finding) => finding.type === 'correction'), false)
+})
+
+test('correctionChecksFromMarkdown fails closed on a missing section and duplicate bullets', () => {
+	const missing = correctionChecksFromMarkdown('# no corrections\n')
+	assert.deepEqual(missing, { ok: false, errors: [{ type: 'no-section' }] })
+	const duplicate = correctionChecksFromMarkdown(`## Corrections
+- C-a: tip "one"
+- C-a: tip "one"
+`)
+	assert.equal(duplicate.ok, false)
+	if (duplicate.ok) throw new Error('expected duplicate')
+	assert.equal(duplicate.errors[0]?.type, 'duplicate-bullet')
+})
+
+test('a new quoted tip in skill markdown becomes a forbid without a catalog edit', () => {
+	const markdown = `## Corrections
+
+- C-probe: Do not write "Fresh phrase".
+
+`
+	const loaded = correctionChecksFromMarkdown(markdown)
+	assert.equal(loaded.ok, true)
+	if (!loaded.ok) throw new Error('load')
+	const probe = loaded.checks[0]
+	assert.equal(probe?.kind, 'forbid-literal')
+	if (probe?.kind === 'forbid-literal') assert.deepEqual(probe.literals, ['Fresh phrase'])
+})
+
+test('table correction bullets stay soft and do not scan as forbids', () => {
+	const tableWithNote = `${fixedTable}
+## Corrections
+
+- C-empty-state: Leave the illustration, never "Rendered later".
+`
+	const screen = `export function NotificationList() {
+  return <EmptyState title="Rendered later" />
+}
+`
+	const value = checkScreens({
+		rules: rules(),
+		rulesPath: RULES_PATH,
+		parsed: [{ path: notificationsPath, text: tableWithNote }],
+		branches: new Map([[notificationsPath, quietBranch([{ path: 'src/notifications/NotificationList.tsx', text: screen }])]]),
+		target: notificationsPath,
+	})
+	assert.equal(value.findings.some((finding) => finding.type === 'correction' && finding.literal === 'Rendered later'), false)
+	assert.ok(value.notes.some((note) => note.type === 'corrected' && note.rule === 'C-empty-state'))
+})
+
 test('the skill example and the readme rules parse', () => {
 	const skill = readFileSync(join(root, 'skills/dstack/SKILL.md'), 'utf8')
 	assert.ok(skill.includes(RULES_PATH))
 	assert.ok(skill.includes(TABLE_SUFFIX))
-	assert.deepEqual(correctionDrift(skill), { ok: true })
 	const example = parseTable(tablePath('SKILL.md'), skill)
 	assert.deepEqual(example.findings, [])
 	const readme = readFileSync(join(root, 'README.md'), 'utf8')
