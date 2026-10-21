@@ -7,3 +7,4 @@ ts	phase	decision	why	evidence	result
 2026-10-21T18:18:01Z	frame	Authored organic Mentions brief shared by both arms	Builders see goal only; spruce also told to follow /dstack	.audit/prompts/	ready
 2026-10-21T18:18:35Z	fan-out	Spawned shop-spruce and shop-aspen builders on the same model	Skill presence is the only intentional difference between the two trees	grok-4.7-xhigh poteto-agent x2	running
 2026-10-21T18:18:58Z	fan-out	Spruce builder bc-376207dd-88a9-50da-8da9-e65e19682b8e and aspen builder bc-a08c7282-897b-57d6-b3c4-4922e716e536 on grok-4.7-xhigh	Record agent ids for the decision trail	bc-376207dd-88a9-50da-8da9-e65e19682b8e bc-a08c7282-897b-57d6-b3c4-4922e716e536	running
+2026-10-21T18:45:32Z	fan-out	Spruce builder returned with dstack check exit 0	Snapshot stored for blind scoring	/workspace/.audit/runs/spruce-raw bc-376207dd-88a9-50da-8da9-e65e19682b8e	complete
