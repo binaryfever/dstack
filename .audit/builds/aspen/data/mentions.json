@@ -1,0 +1,44 @@
+{
+  "mentions": [
+    {
+      "id": "m-jonah",
+      "actorName": "Jonah Abebe",
+      "place": "Order 1790",
+      "body": "Thanks for the soil mix note on that order.",
+      "createdAt": "2026-10-05T16:00:00.000Z",
+      "seen": true
+    },
+    {
+      "id": "m-luis",
+      "actorName": "Luis Ortega",
+      "place": "Order 1842",
+      "body": "Can you hold a fiddle-leaf fig for Saturday pickup?",
+      "createdAt": "2026-10-19T18:00:00.000Z",
+      "seen": false
+    },
+    {
+      "id": "m-priya",
+      "actorName": "Priya Shah",
+      "place": "Care questions",
+      "body": "The calathea you recommended dropped two leaves. Can you look?",
+      "createdAt": "2026-10-21T12:00:00.000Z",
+      "seen": true
+    },
+    {
+      "id": "m-mara",
+      "actorName": "Mara Chen",
+      "place": "Propagation thread",
+      "body": "Your monstera cutting has roots. I mentioned you so you can see the photo.",
+      "createdAt": "2026-10-21T15:18:00.000Z",
+      "seen": false
+    },
+    {
+      "id": "m-eden",
+      "actorName": "Eden Brooks",
+      "place": "Shop photos",
+      "body": "Tagged you under the new neon pothos photo.",
+      "createdAt": "2026-10-21T17:55:00.000Z",
+      "seen": false
+    }
+  ]
+}
