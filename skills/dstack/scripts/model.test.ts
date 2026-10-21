@@ -296,7 +296,10 @@ test('every skill correction bullet is enforced as the check it classifies to', 
 		for (const literal of check.literals) {
 			const cited = checkScreens(citing(check.rule, screenQuoting(literal)))
 			const hit = cited.findings.find((finding) => finding.type === 'correction' && finding.literal === literal)
-			assert.ok(hit && hit.rule === check.rule && hit.text === check.text)
+			assert.ok(hit != null && hit.type === 'correction')
+			if (hit == null || hit.type !== 'correction') throw new Error('correction')
+			assert.equal(hit.rule, check.rule)
+			assert.equal(hit.text, check.text)
 			const commented = checkScreens(citing(check.rule, `// ${literal}\nexport const copy = "zz"\n`))
 			assert.equal(
 				commented.findings.some((finding) => finding.type === 'correction' && finding.literal === literal),
