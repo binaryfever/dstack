@@ -12,6 +12,7 @@ import {
 	applyEdit,
 	checkScreens,
 	collectIssues,
+	correctionDrift,
 	parseRules,
 	parseTable,
 	propose,
@@ -131,6 +132,63 @@ function rulesFrom(text: string) {
 	return parsed.rules
 }
 
+test('forbidden empty copy fails when the table cites C-empty-state', () => {
+	const screen = `export function NotificationList() {
+  return (
+    <AsyncList
+      empty={<EmptyState title="No data" />}
+    />
+  )
+}
+`
+	const value = checkScreens({
+		rules: rules(),
+		rulesPath: RULES_PATH,
+		parsed: [{ path: notificationsPath, text: fixedTable }],
+		branches: new Map([[notificationsPath, quietBranch([{ path: 'src/notifications/NotificationList.tsx', text: screen }])]]),
+		target: notificationsPath,
+	})
+	const correction = value.findings.find((finding) => finding.type === 'correction')
+	assert.ok(correction)
+	assert.deepEqual(correction, {
+		type: 'correction',
+		at: { path: 'src/notifications/NotificationList.tsx', line: 4 },
+		rule: 'C-empty-state',
+		ruleLine: 12,
+		text: 'Empty copy names what will appear here, never "No data".',
+		literal: 'No data',
+	})
+	assert.match(report(value), /"No data" breaks C-empty-state \(product-rules\.md:12\)/)
+})
+
+test('a multi-line template with forbidden copy is still scanned', () => {
+	const screen = 'const title = `\nNo data\n`\n'
+	const value = checkScreens({
+		rules: rules(),
+		rulesPath: RULES_PATH,
+		parsed: [{ path: notificationsPath, text: fixedTable }],
+		branches: new Map([[notificationsPath, quietBranch([{ path: 'src/notifications/NotificationList.tsx', text: screen }])]]),
+		target: notificationsPath,
+	})
+	assert.equal(value.findings.some((finding) => finding.type === 'correction'), true)
+})
+
+test('comment-only forbidden copy does not fail', () => {
+	const screen = `// No data
+export function NotificationList() {
+  return 'ok'
+}
+`
+	const value = checkScreens({
+		rules: rules(),
+		rulesPath: RULES_PATH,
+		parsed: [{ path: notificationsPath, text: fixedTable }],
+		branches: new Map([[notificationsPath, quietBranch([{ path: 'src/notifications/NotificationList.tsx', text: screen }])]]),
+		target: notificationsPath,
+	})
+	assert.equal(value.findings.some((finding) => finding.type === 'correction'), false)
+})
+
 test('a built screen that skips RowSkeleton and uses a raw hex fails those two checks', () => {
 	const dir = join(import.meta.dirname, 'fixtures/shop-built/src/notifications')
 	const list = readFileSync(join(dir, 'NotificationList.tsx'), 'utf8')
@@ -207,6 +265,7 @@ test('the skill example and the readme rules parse', () => {
 	const skill = readFileSync(join(root, 'skills/dstack/SKILL.md'), 'utf8')
 	assert.ok(skill.includes(RULES_PATH))
 	assert.ok(skill.includes(TABLE_SUFFIX))
+	assert.deepEqual(correctionDrift(skill), { ok: true })
 	const example = parseTable(tablePath('SKILL.md'), skill)
 	assert.deepEqual(example.findings, [])
 	const readme = readFileSync(join(root, 'README.md'), 'utf8')
