@@ -1,0 +1,1 @@
+judge_alpha=cedar judge_beta=willow

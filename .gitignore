@@ -1,1 +1,5 @@
 node_modules/
+
+# FMC-579 intermediate trees (committed package lives under .audit/builds and .audit/proof)
+.audit/runs/
+.audit/cedar-full/
