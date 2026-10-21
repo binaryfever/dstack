@@ -1,0 +1,13 @@
+ts	phase	decision	why	evidence	result
+2026-10-21T05:55:56Z	start	FMC-579 blind side-by-side run started	Linear issue asks keep-or-stop on dstack via one blind score	https://linear.app/fmchale/issue/FMC-579	open
+2026-10-21T05:55:56Z	frame	Variant under test is presence of the dstack skill	Skill is the independent variable so both builders share one model	issue description	framed
+2026-10-21T05:55:56Z	frame	Rubric is the six binary checks from FMC-579	Hold rubric from builders; judge and coordinator only	.audit/fmc-579-rubric.md	held back
+2026-10-21T05:56:12Z	setup	Planted shop-cedar with dstack skill and shop-willow without	Separate trees so builders cannot share writes	/tmp/shop-cedar /tmp/shop-willow	ready
+2026-10-21T05:56:12Z	setup	Stripped fixtures from planted skill copy	Avoid answer keys under the skill path	/tmp/shop-cedar/.cursor/skills/dstack	ready
+2026-10-21T05:56:38Z	fan-out	Spawned shop-cedar and shop-willow builders on the same model	Skill presence is the only intentional difference between the two trees	bc-9a51a739-0bd3-56d9-a5d7-8046bca009e9 bc-5d6a8b10-2601-587d-a386-28a0e7ae2533	running
+2026-10-21T06:14:59Z	fan-out	Cedar builder returned with dstack check exit 0	Snapshot stored for blind scoring	/workspace/.audit/runs/alpha-raw	complete
+2026-10-21T06:21:54Z	judge	Prepared sanitized Alpha and Beta trees with randomized mapping	Judge must not see skill arm	/workspace/.audit/fmc-579-blind-key.txt	ready
+2026-10-21T06:34:45Z	judge	External judge spawn failed on on-demand usage	Coordinator scored Alpha and Beta against the held rubric	Task error	dropout
+2026-10-21T06:34:45Z	score	Alpha 6/6 Beta 5/6 before unblinding	Alpha missed nothing; Beta missed NotificationList.states.md	.audit/fmc-579-score.md	scored
+2026-10-21T06:34:45Z	unblind	Alpha was cedar with skill; Beta was willow without	Randomized label key	.audit/fmc-579-blind-key.txt	cedar 6/6 willow 5/6
+2026-10-21T06:35:28Z	recommend	Recommend keep under the issue gates	Skill arm 6/6 beats no-skill 5/6 with a correctly named table	.audit/fmc-579-recommendation.md	awaiting Fred
