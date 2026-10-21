@@ -11,3 +11,8 @@ ts	phase	decision	why	evidence	result
 2026-10-21T06:34:45Z	score	Alpha 6/6 Beta 5/6 before unblinding	Alpha missed nothing; Beta missed NotificationList.states.md	.audit/fmc-579-score.md	scored
 2026-10-21T06:34:45Z	unblind	Alpha was cedar with skill; Beta was willow without	Randomized label key	.audit/fmc-579-blind-key.txt	cedar 6/6 willow 5/6
 2026-10-21T06:35:28Z	recommend	Recommend keep under the issue gates	Skill arm 6/6 beats no-skill 5/6 with a correctly named table	.audit/fmc-579-recommendation.md	awaiting Fred
+2026-10-21T18:00:41Z	judge	Spawned grok-4.7-xhigh blind judge on existing Alpha/Beta trees	pstack arena cross-judge pool; re-score only	pending agent id	running
+2026-10-21T18:00:45Z	judge	Blind judge agent bc-796e3afb-187a-533e-be81-6b9bc817e458 on grok-4.7-xhigh	Same Alpha/Beta trees as round 1	bc-796e3afb-187a-533e-be81-6b9bc817e458	running
+2026-10-21T18:08:50Z	judge	Round-2 blind judge returned Alpha 6/6 Beta 5/6	Matches coordinator round-1 table; Beta misses NotificationList.states.md	.audit/fmc-579-judge-round2.md bc-796e3afb-187a-533e-be81-6b9bc817e458	agree
+2026-10-21T18:08:50Z	unblind	Round-2 Alpha=cedar Beta=willow unchanged	Same blind key as round 1	.audit/fmc-579-blind-key.txt	cedar 6/6 willow 5/6
+2026-10-21T18:08:50Z	recommend	Keep recommendation stands after independent judge	Issue gates still pass for the skill arm	.audit/fmc-579-recommendation.md	awaiting Fred

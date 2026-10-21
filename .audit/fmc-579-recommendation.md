@@ -12,4 +12,6 @@ Issue rule: keep `/dstack` only if the skill arm passes states, reuse, and `Noti
 
 **Recommendation: keep.**
 
-The no-skill arm reused the planted kit this time (unlike the October 11 Linden run that invented parallel components and scored 3/6). The skill's clear win on this repeat is the state table plus a check that exits 0 against it. Fred still makes the keep-or-stop call.
+Round 2’s independent judge agreed: cedar 6/6, willow 5/6, with willow’s only miss the missing `NotificationList.states.md`.
+
+The no-skill arm reused the planted kit this time (unlike the October 11 Linden run that invented parallel components and scored 3/6). The skill’s clear win on this repeat is the state table plus a check that exits 0 against it. Fred still makes the keep-or-stop call.

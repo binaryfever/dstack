@@ -1,6 +1,10 @@
 # FMC-579 score
 
-Scored from files only under sanitized labels Alpha and Beta. The external judge seat failed to spawn (on-demand usage). The coordinator scored both trees against the held rubric, then opened the blind key.
+Scored from files only under sanitized labels Alpha and Beta.
+
+Round 1: the external judge seat failed to spawn. The coordinator scored both trees against the held rubric, then opened the blind key.
+
+Round 2: an independent blind judge on `grok-4.7-xhigh` (pstack `arena cross-judge pool`) scored the same trees. Table matched round 1. Artifact: `.audit/fmc-579-judge-round2.md`. Agent `bc-796e3afb-187a-533e-be81-6b9bc817e458`.
 
 ## Blind table
 
