@@ -1,0 +1,8 @@
+ts	phase	decision	why	evidence	result
+2026-10-21T18:17:17Z	start	FMC-581 mentions blind side-by-side run started	Linear issue asks keep-going-or-narrow on dstack via a second surface	https://linear.app/fmchale/issue/FMC-581	open
+2026-10-21T18:17:17Z	frame	Variant under test is presence of the dstack skill on a Mentions list	Skill is the independent variable so both builders share one model	issue description	framed
+2026-10-21T18:17:17Z	frame	Rubric is the six binary checks from FMC-581	Hold rubric from builders; judge and coordinator only	.audit/fmc-581-rubric.md	held_back
+2026-10-21T18:18:01Z	setup	Planted shop-spruce with dstack skill and shop-aspen without	Separate trees so builders cannot share writes	/tmp/shop-spruce /tmp/shop-aspen	ready
+2026-10-21T18:18:01Z	setup	Stripped fixtures from planted skill copy	Avoid answer keys under the skill path	/tmp/shop-spruce/.cursor/skills/dstack	ready
+2026-10-21T18:18:01Z	frame	Authored organic Mentions brief shared by both arms	Builders see goal only; spruce also told to follow /dstack	.audit/prompts/	ready
+2026-10-21T18:18:35Z	fan-out	Spawned shop-spruce and shop-aspen builders on the same model	Skill presence is the only intentional difference between the two trees	grok-4.7-xhigh poteto-agent x2	running
