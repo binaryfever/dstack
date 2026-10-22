@@ -10,12 +10,11 @@ Build one screen. The repo README lists the other skills under Playbooks.
 
 Read `product-rules.md` at the repo root. Cite rules by id. If that file is missing, or it has no `### C-`, `### P-`, or `### T-` heading, stop and tell the user to run `/dstack-init`.
 
-Before any UI code, write `<Screen>.states.md` next to the screen's entry file, or edit the table that is already there.
+Before any UI code, write `<Screen>.states.md` next to the screen's entry file, or edit the table that is already there. The columns are the shape. Name the surface and the kind from the screen you were asked to build. Set `source` from how that screen loads. Cite a rule id from `product-rules.md` when one covers that cell. Add a row only for a surface that screen has.
 
 | surface | kind | source | machine | empty | loading | failed | populated |
 |---|---|---|---|---|---|---|---|
-| notifications | list | remote | C-async-list | C-empty-state | C-row-skeleton | P-retry-inline | unlisted(NotificationRow) + C-avatar + P-relative-time |
-| unread-count | badge | remote | C-badge | C-badge | P-badge-quiet | P-badge-quiet | C-badge |
+| the-screen | its-kind | remote | none | unlisted(EmptySlot) | unlisted(LoadingSlot) | unlisted(FailedSlot) | unlisted(ContentSlot) |
 
 ## Corrections
 

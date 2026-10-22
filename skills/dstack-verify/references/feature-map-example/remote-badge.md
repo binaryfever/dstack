@@ -25,6 +25,6 @@ Preconditions:
 
 ## Gotchas
 
-- Row-level unread marks are not the badge. Assert the badge control the state table names.
+- Assert the control the state table names for this surface.
 - Counts above the product's cap must match the product's display rule and accessible name.
 - If the product has no badge surface, omit this file from the generated map. Do not invent one.

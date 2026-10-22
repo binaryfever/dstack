@@ -1,6 +1,6 @@
 ---
 name: dstack-verify
-description: "Use for /dstack-verify, or when a product that installed dstack needs pass/fail proof that a remote list or badge moves through empty, loading, failed, and populated."
+description: "Use for /dstack-verify, or when a product that installed dstack needs pass/fail proof that a remote surface moves through the states its source requires."
 disable-model-invocation: true
 ---
 
@@ -13,7 +13,7 @@ Generate verification for the product that installed dstack. Run it in that prod
 When invoked as `/dstack-verify`:
 
 1. Interview the product from the codebase. Answer surface, run, drive, observe, and isolate. Prefer existing harnesses. Ask the human only what you cannot observe.
-2. Find every `*.states.md` row whose `source` is `remote` and whose `kind` is a list or a badge. Those surfaces are the seed set. At least one list and one badge when both exist.
+2. Find every `*.states.md` row whose `source` is `remote`. Those surfaces are the seed set. Use each row's own surface name and kind. Do not add a surface the table does not have.
 3. Write the product harness under `.dstack-verify/` in the product repo:
    - `features/README.md` plus one feature file per seeded surface. Follow `<directory of this file>/references/feature-map-example/`. Use the product's real screen names and selectors. Leave no placeholders.
    - `SKILL.md` or `harness.md` with Launch, Doctor, Drive, Evidence, Cleanup, and Helpers for this product. Ready means usable, not only that a process answers. Cleanup keeps evidence at `.dstack-verify/evidence/<feature-id>/` and removes only what this run started.

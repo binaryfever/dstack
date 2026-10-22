@@ -1,6 +1,6 @@
 # Product verification map
 
-This directory is the maintained source for verifying remote list and badge behavior in the product. Read the index before driving the app, then use the matching feature file as the recipe.
+This directory shows the feature-file contract. The generated map has one file per remote surface from the product's state tables, using that product's names. Read the index before driving the app, then use the matching feature file as the recipe.
 
 Replace every placeholder with this product's real paths, commands, and selectors when you generate the map under `.dstack-verify/features/`.
 

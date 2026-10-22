@@ -668,8 +668,8 @@ function classifyDisk(rulesText: string | null, rendered: string): Proposal['dis
 	if (rulesText == null) return 'missing'
 	const parsed = parseRules(rulesText)
 	if (!parsed.ok) return 'missing'
-	if (parsed.rules.byId.size === 0) return 'cite-empty'
 	if (rulesText === rendered) return 'same-text'
+	if (parsed.rules.byId.size === 0) return 'cite-empty'
 	return 'other-citeable'
 }
 

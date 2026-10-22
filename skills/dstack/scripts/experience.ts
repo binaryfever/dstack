@@ -9,13 +9,13 @@ const RUBRIC = [
 	{
 		id: 'empty-copy',
 		kind: 'judgment',
-		bar: 'The empty sentence names what will appear in the list. It is one sentence. A slogan that only says nothing is here fails.',
+		bar: 'The empty sentence names what will appear here. It is one sentence. A slogan that only says nothing is here fails.',
 		proof: ['empty'],
 	},
 	{
 		id: 'hierarchy',
 		kind: 'judgment',
-		bar: 'On both populated proofs, the screen title is the header and the badge is a smaller count beside that title. A badge that reads as a second title or as a card fails.',
+		bar: 'On both populated proofs, the screen title is the header. Anything beside it stays smaller than that title. A second title or a card fails.',
 		proof: ['populatedDesktop', 'populatedMobile'],
 	},
 	{
@@ -27,7 +27,7 @@ const RUBRIC = [
 	{
 		id: 'visual',
 		kind: 'judgment',
-		bar: 'The empty proof shows one illustration and one sentence, and it shows no rows. The loading proof shows skeletons, not the empty sentence and not rows. The failed proof shows one sentence and one retry control. Both populated proofs show more than one row. A card grid fails.',
+		bar: 'The empty proof shows the empty state and no populated content. The loading proof shows the loading state, not the empty sentence and not populated content. The failed proof shows one sentence and one retry control. Both populated proofs show the populated content. A card grid fails.',
 		proof: ['empty', 'loading', 'failed', 'populatedDesktop', 'populatedMobile'],
 	},
 ] as const

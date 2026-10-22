@@ -18,14 +18,14 @@ Design-system load, Corrections, the interrogate gate, and the experience bar ar
 
 ## Experience
 
-The experience bar scores empty copy, header and badge hierarchy, parallel cards, and visual correctness. It is not a playbook. Run `dstack.ts experience rubric` to print the bars. Run `dstack.ts experience score spruce --actor agent --judgment .audit/experience/spruce/agent-judgment.md` to score the spruce proofs under `.audit/proof/`. A blind judge runs the same score command with `--actor judge` and a judge judgment file. `dstack check` does not run this command, and this command does not change the check exit code.
+The experience bar scores empty copy, header hierarchy, parallel cards, and visual correctness. It is not a playbook. Run `dstack.ts experience rubric` to print the bars. Run `dstack.ts experience score spruce --actor agent --judgment .audit/experience/spruce/agent-judgment.md` to score the spruce proofs under `.audit/proof/`. A blind judge runs the same score command with `--actor judge` and a judge judgment file. `dstack check` does not run this command, and this command does not change the check exit code.
 
 ## Install
 
 Copy each folder under `skills/` into the product's `.cursor/skills/` directory, or install this repo as a Cursor plugin. The product repo keeps `product-rules.md` at its root. Run checks from that repo:
 
 ```text
-node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts check src/notifications/NotificationList.states.md
+node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts check path/to/Screen.states.md
 ```
 
 `check` with no path reads every `*.states.md` file. Exit 0 means no findings. Exit 1 means fix the findings. Exit 2 means dstack could not run. Notes and proposals do not change the exit code.
