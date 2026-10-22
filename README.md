@@ -2,9 +2,23 @@
 
 dstack checks a product screen against `product-rules.md`. The screen gets a state table. The check reuses the components, patterns, and tokens that file already names. The second screen that hits the same gap gets a proposed edit. The check does not apply it.
 
+## Playbooks
+
+Each job is its own skill. The playbook tells the agent which job to run. `dstack check` grades the table.
+
+| Skill | Job |
+|---|---|
+| `/dstack` | Build a screen. Write the state table first, reuse the rules, and run check. |
+| `/dstack-init` | Bootstrap `product-rules.md` when the file is missing or has no `### C-`, `### P-`, or `### T-` heading. |
+| `/dstack-accept` | Apply or decline a rules proposal. |
+| `/dstack-verify` | Drive the real UI through empty, loading, failed, and populated. |
+| `/dstack-eval` | Compare a skill run with a no-skill run on the same fixtures. |
+
+Design-system load, Corrections, the interrogate gate, and the experience bar are not playbooks.
+
 ## Install
 
-Copy `skills/dstack` into the product's `.cursor/skills/dstack` directory, or install this repo as a Cursor plugin. The product repo keeps `product-rules.md` at its root. Run checks from that repo:
+Copy each folder under `skills/` into the product's `.cursor/skills/` directory, or install this repo as a Cursor plugin. The product repo keeps `product-rules.md` at its root. Run checks from that repo:
 
 ```text
 node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts check src/notifications/NotificationList.states.md
@@ -65,4 +79,4 @@ Two rules cannot cover the same state. The check names both headings when they d
 
 ## Accept a proposal
 
-A proposal is a unified diff in the check output. Apply it in a change that does not touch a `*.states.md` file. The next check then tells every screen that still cites the old name to use the new rule. A decline is also a rules edit, such as a `Covers:` line that says the state renders nothing, so the decision lives in `product-rules.md`.
+The skill for this job is `/dstack-accept`. A proposal is a unified diff in the check output. Apply it in a change that does not touch a `*.states.md` file. The next check then tells every screen that still cites the old name to use the new rule. A decline is also a rules edit, such as a `Covers:` line that says the state renders nothing, so the decision lives in `product-rules.md`.
