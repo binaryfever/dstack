@@ -1,6 +1,6 @@
 # Product verification map
 
-This directory shows the feature-file contract. The generated map has one file per remote surface from the product's state tables, using that product's names. Read the index before driving the app, then use the matching feature file as the recipe.
+This directory is the file contract, the same job as pstack's feature-map example. It is not a screen, and this skill does not ship one. When you generate a map, write it in the repo you are in, from the screen `/dstack` is building.
 
 Replace every placeholder with this product's real paths, commands, and selectors when you generate the map under `.dstack-verify/features/`.
 
@@ -39,5 +39,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 
 ## Features
 
-- [Remote list](./remote-list.md) covers empty, loading, failed, and populated for one remote list surface.
-- [Remote badge](./remote-badge.md) covers quiet and populated states for one remote badge surface.
+- [Feature file](./feature.md) is the contract for one state-table row. A `remote` row covers empty, loading, failed, and populated. A `local` row covers empty and populated. A `static` row covers populated.

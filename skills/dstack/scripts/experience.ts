@@ -21,7 +21,7 @@ const RUBRIC = [
 	{
 		id: 'no-parallel-card',
 		kind: 'mechanical',
-		bar: 'When the list populated cell names a row, the screen files do not also declare a Card function or class, and they do not put a card class on an element.',
+		bar: 'When a populated cell names a row, the screen files do not also declare a Card function or class, and they do not put a card class on an element.',
 		proof: [],
 	},
 	{
@@ -87,8 +87,6 @@ type ScoreError =
 	| { type: 'extra-criterion'; id: string }
 	| { type: 'table-unfinished'; path: string }
 	| { type: 'rules-unreadable'; path: string }
-	| { type: 'no-list-surface' }
-	| { type: 'ambiguous-list' }
 	| { type: 'kind-mismatch'; id: string }
 	| { type: 'screen-mismatch-score'; agent: string; judge: string }
 	| { type: 'unreadable'; path: string }
@@ -121,10 +119,6 @@ function formatError(error: ScoreError): string {
 			return `experience table-unfinished ${error.path}`
 		case 'rules-unreadable':
 			return `experience rules-unreadable ${error.path}`
-		case 'no-list-surface':
-			return 'experience no-list-surface'
-		case 'ambiguous-list':
-			return 'experience ambiguous-list'
 		case 'kind-mismatch':
 			return `experience kind-mismatch ${error.id}`
 		case 'screen-mismatch-score':
@@ -430,13 +424,9 @@ function findFunctionLine(root: string, buildRoot: string, name: string): CardHi
 	return null
 }
 
-function listSurface(table: StateTable): { populatedLine: number; populatedCell: Cell } | ScoreError {
-	const lists = table.surfaces.filter((surface) => String(surface.kind) === 'list')
-	if (lists.length === 0) return { type: 'no-list-surface' }
-	if (lists.length > 1) return { type: 'ambiguous-list' }
-	const surface = lists[0]
-	if (surface == null) return { type: 'no-list-surface' }
-	return { populatedLine: surface.line, populatedCell: surface.cells.populated }
+function cellForPopulated(surface: StateTable['surfaces'][number]): Cell | null {
+	const cells = surface.cells as Readonly<Record<string, Cell>>
+	return cells.populated ?? null
 }
 
 function mechanicalNoParallelCard(
@@ -445,23 +435,33 @@ function mechanicalNoParallelCard(
 	table: StateTable,
 	rules: Rules,
 ): CellFor<'no-parallel-card'> | ScoreError {
-	const listed = listSurface(table)
-	if ('type' in listed) return listed
-	const { populatedLine, populatedCell } = listed
 	const tablePathRel = SCREENS[screen].table
-	const cellCite: Cite = { path: tablePathRel, line: populatedLine, note: populatedCell.map(refNote).join(' + ') }
-	const names = namesFromCell(populatedCell, rules)
-	const rowNames = names.filter((name) => name.endsWith('Row'))
-	const hasCardName = names.some((name) => name.endsWith('Card'))
-	if (hasCardName || rowNames.length === 0) {
+	const named = table.surfaces.flatMap((surface) => {
+		const cell = cellForPopulated(surface)
+		if (cell == null) return []
+		const names = namesFromCell(cell, rules)
+		const rowNames = names.filter((name) => name.endsWith('Row'))
+		const cardNames = names.filter((name) => name.endsWith('Card'))
+		if (rowNames.length === 0 && cardNames.length === 0) return []
+		return [{ line: surface.line, cell, rowNames, cardNames }]
+	})
+	const rowNames = named.flatMap((item) => item.rowNames)
+	const cited = named.find((item) => item.rowNames.length > 0) ?? named[0]
+	if (cited == null || rowNames.length === 0 || named.some((item) => item.cardNames.length > 0)) {
+		const evidence: Cite = cited == null
+			? { path: tablePathRel, line: null, note: 'no row' }
+			: { path: tablePathRel, line: cited.line, note: cited.cell.map(refNote).join(' + ') }
 		return {
 			id: 'no-parallel-card',
 			kind: 'mechanical',
-			mark: 0,
-			because: 'The populated cell does not name a row.',
-			evidence: [cellCite],
+			mark: cited == null ? 1 : 0,
+			because: cited == null ? 'No populated cell names a row.' : 'The populated cell does not name a row.',
+			evidence: [evidence],
 		}
 	}
+	const populatedLine = cited.line
+	const populatedCell = cited.cell
+	const cellCite: Cite = { path: tablePathRel, line: populatedLine, note: populatedCell.map(refNote).join(' + ') }
 	const hits = scanCardHits(root, SCREENS[screen].buildRoot)
 	const first = hits[0]
 	if (first == null) {
