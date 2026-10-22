@@ -11,21 +11,25 @@ import {
 	decide,
 	formatDecision,
 	parseDecision,
-	parseRules,
 	parseTable,
 	report,
 	skillCorrectionChecks,
 	tablePath,
 } from './model.ts'
+import { loadCatalog } from './checkout.ts'
 import { experienceCommand } from './experience.ts'
+import { gateCommand } from './gate.ts'
 
-type Exit = 0 | 1 | 2
+type Exit = 0 | 1 | 2 | 3
 
 const USAGE = `usage: dstack check [table.states.md]
 usage: dstack accept [--write] uncovered <kind.state>
 usage: dstack accept [--write] unlisted <CodeName>
 usage: dstack accept [--write] corrected <RuleId>
 usage: dstack decline [--write] uncovered <kind.state>
+usage: dstack gate <key>
+usage: dstack gate <key> --panel <file> --hash <64-hex>
+usage: dstack gate <key> --skip <reason>
 usage: dstack experience rubric
 usage: dstack experience score <screen> --actor agent|judge --judgment <file>
 usage: dstack experience compare <agent-score> <judge-score>
@@ -58,14 +62,6 @@ function changedPaths(root: string): Set<string> {
 		if (line.trim() !== '') names.add(line.trim())
 	}
 	return names
-}
-
-function listTables(root: string): string[] {
-	const listed = git(root, ['ls-files', '-co', '--exclude-standard', '--', `*${TABLE_SUFFIX}`]) ?? ''
-	return listed
-		.split('\n')
-		.map((line) => line.trim())
-		.filter((line) => line.endsWith(TABLE_SUFFIX))
 }
 
 function filesUnder(root: string, dir: string): SourceFile[] {
@@ -143,21 +139,15 @@ function settle(argv: readonly string[]): 0 | 2 {
 		process.stderr.write(`dstack ${args.action} needs a git checkout.\n`)
 		return 2
 	}
-	const rulesFile = join(root, RULES_PATH)
-	if (!existsSync(rulesFile)) {
-		process.stderr.write(`${RULES_PATH} not found at ${root}. See the dstack README for the format.\n`)
+	const catalog = loadCatalog(root)
+	if (!catalog.ok) {
+		process.stderr.write(catalog.stderr)
 		return 2
 	}
-	const rulesText = readFileSync(rulesFile, 'utf8')
-	const parsedRules = parseRules(rulesText)
-	if (!parsedRules.ok) {
-		for (const error of parsedRules.errors) process.stderr.write(`${RULES_PATH}:${error.line} ${error.problem}\n`)
-		return 2
-	}
-	const tables = listTables(root).map((path) => parseTable(tablePath(path), readFileSync(join(root, path), 'utf8')).table)
+	const tables = catalog.files.map((file) => parseTable(file.path, file.text).table)
 	const result = decide({
-		rules: parsedRules.rules,
-		rulesText,
+		rules: catalog.rules,
+		rulesText: catalog.rulesText,
 		tables,
 		decision: parsedDecision.decision,
 	})
@@ -173,6 +163,14 @@ function settle(argv: readonly string[]): 0 | 2 {
 
 function main(argv: readonly string[]): Exit {
 	if (argv[0] === 'accept' || argv[0] === 'decline') return settle(argv)
+	if (argv[0] === 'gate') {
+		const root = repoRoot()
+		if (root == null) {
+			process.stderr.write('dstack gate needs a git checkout.\n')
+			return 2
+		}
+		return gateCommand(root, argv.slice(1))
+	}
 	if (argv[0] === 'experience') {
 		const root = repoRoot()
 		if (root == null) {
@@ -190,17 +188,12 @@ function main(argv: readonly string[]): Exit {
 		process.stderr.write('dstack check needs a git checkout.\n')
 		return 2
 	}
-	const rulesFile = join(root, RULES_PATH)
-	if (!existsSync(rulesFile)) {
-		process.stderr.write(`${RULES_PATH} not found at ${root}. See the dstack README for the format.\n`)
+	const catalog = loadCatalog(root)
+	if (!catalog.ok) {
+		process.stderr.write(catalog.stderr)
 		return 2
 	}
-	const parsedRules = parseRules(readFileSync(rulesFile, 'utf8'))
-	if (!parsedRules.ok) {
-		for (const error of parsedRules.errors) process.stderr.write(`${RULES_PATH}:${error.line} ${error.problem}\n`)
-		return 2
-	}
-	const tables = listTables(root)
+	const tables = catalog.files.map((file) => file.path)
 	const targetArg = argv[1]
 	if (targetArg != null && !targetArg.endsWith(TABLE_SUFFIX)) {
 		process.stderr.write(`check expects a ${TABLE_SUFFIX} file.\n`)
@@ -213,9 +206,9 @@ function main(argv: readonly string[]): Exit {
 	}
 	const changed = changedPaths(root)
 	const branches = new Map<string, BranchView>()
-	const parsed = tables.map((path) => {
-		branches.set(path, branchFor(root, path, changed))
-		return { path: tablePath(path), text: readFileSync(join(root, path), 'utf8') }
+	const parsed = catalog.files.map((file) => {
+		branches.set(file.path, branchFor(root, file.path, changed))
+		return { path: file.path, text: file.text }
 	})
 	const correctionLoad = skillCorrectionChecks()
 	if (!correctionLoad.ok) {
@@ -230,7 +223,7 @@ function main(argv: readonly string[]): Exit {
 		if (check.kind === 'unchecked') process.stderr.write(`${check.rule} is unchecked: ${check.reason}\n`)
 	}
 	const value = checkScreens({
-		rules: parsedRules.rules,
+		rules: catalog.rules,
 		rulesPath: RULES_PATH,
 		parsed,
 		branches,
