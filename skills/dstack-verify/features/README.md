@@ -30,5 +30,5 @@ Each feature file starts with an H1 title and one paragraph describing user-visi
 
 ## Features
 
-- [Notifications list](./notifications-list.md) — empty, loading, error, and populated list bodies.
-- [Unread badge](./unread-badge.md) — header badge hidden in quiet states and showing unread count in success.
+- [Notifications list](./notifications-list.md) covers empty, loading, error, and populated list bodies.
+- [Unread badge](./unread-badge.md) covers a header badge hidden in quiet states and showing unread count in success.

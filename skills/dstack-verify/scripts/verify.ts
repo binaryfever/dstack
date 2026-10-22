@@ -84,7 +84,7 @@ async function listenServer(server: http.Server): Promise<number> {
 }
 
 function readRun(): RunState {
-	if (!fs.existsSync(runPath)) failCouldRun('dstack-verify: no run.json — run launch or prove first')
+	if (!fs.existsSync(runPath)) failCouldRun('dstack-verify: no run.json; run launch or prove first')
 	return JSON.parse(fs.readFileSync(runPath, 'utf8')) as RunState
 }
 

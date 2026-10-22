@@ -26,4 +26,4 @@ Preconditions:
 ## Gotchas
 
 - Row-level unread dots are separate from the header badge; do not count dots as the badge.
-- Badge display uses `99+` for counts above 99 while the accessible name matches the displayed text.
+- Counts above 99 render as `99+` with accessible name `99+ unread`.
