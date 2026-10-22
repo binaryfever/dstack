@@ -147,7 +147,6 @@ async function stopChrome(chrome: ChildProcess) {
 		try {
 			chrome.kill('SIGKILL')
 		} catch {
-			/* already stopped */
 		}
 	}
 	await Promise.race([
@@ -403,7 +402,6 @@ async function cmdCleanup() {
 		try {
 			process.kill(serverPid)
 		} catch {
-			/* already stopped */
 		}
 	}
 	if (fs.existsSync(serverInfoPath)) fs.unlinkSync(serverInfoPath)
@@ -414,7 +412,6 @@ async function cmdCleanup() {
 			try {
 				process.kill(run.chromePid, 'SIGKILL')
 			} catch {
-				/* already stopped */
 			}
 		}
 		await new Promise((resolve) => setTimeout(resolve, 500))
