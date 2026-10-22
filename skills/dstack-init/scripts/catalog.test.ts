@@ -11,16 +11,16 @@ test('partition skips audit and skills, classifies product paths', () => {
 		RULES_PATH,
 		'.audit/builds/willow/src/components/AsyncList.js',
 		'skills/dstack/scripts/fixtures/shop/product-rules.md',
-		'src/notifications/NotificationList.js',
-		'src/notifications/notifications.css',
-		'src/notifications/NotificationList.states.md',
-		'src/notifications/NotificationList.test.js',
+		'src/board/Board.js',
+		'src/board/board.css',
+		'src/board/Board.states.md',
+		'src/board/Board.test.js',
 	]
 	const parts = partition(paths)
 	assert.equal(parts.rules, RULES_PATH)
-	assert.deepEqual(parts.sources, ['src/notifications/NotificationList.js'])
-	assert.deepEqual(parts.styles, ['src/notifications/notifications.css'])
-	assert.deepEqual(parts.tables, ['src/notifications/NotificationList.states.md'])
+	assert.deepEqual(parts.sources, ['src/board/Board.js'])
+	assert.deepEqual(parts.styles, ['src/board/board.css'])
+	assert.deepEqual(parts.tables, ['src/board/Board.states.md'])
 	assert.ok(parts.skipped.some((p) => p.includes('.audit/')))
 	assert.ok(parts.skipped.some((p) => p.startsWith('skills/')))
 	assert.ok(parts.skipped.some((p) => p.includes('.test.js')))
@@ -29,12 +29,12 @@ test('partition skips audit and skills, classifies product paths', () => {
 test('inline error switch yields failed slot without Covers lines', () => {
 	const source = `export function Empty() {}
 export function Loading() {}
-export function NotificationError() {}
+export function SlotError() {}
 export function Row() {}
-export function renderNotificationList(status) {
+export function renderBoard(status) {
   if (status === 'empty') return Empty()
   if (status === 'loading') return Loading()
-  if (status === 'error') return NotificationError()
+  if (status === 'error') return SlotError()
   return Row()
 }
 `
@@ -52,7 +52,7 @@ export function renderNotificationList(status) {
 		(c) => c.type === 'component' && c.place.type === 'slot' && c.place.state === 'failed',
 	)
 	assert.ok(slot)
-	assert.equal(slot?.id, 'C-notification-error')
+	assert.equal(slot?.id, 'C-slot-error')
 	assert.ok(!result.proposal.rendered.includes('Covers:'))
 	assert.ok(parseRules(result.proposal.rendered).ok)
 })
@@ -60,7 +60,7 @@ export function renderNotificationList(status) {
 test('catalog-conflict when two slot callees share one state', () => {
 	const source = `export function A() {}
 export function B() {}
-export function renderNotificationList(status) {
+export function renderBoard(status) {
   if (status === 'empty') return A()
   if (status === 'loading') return B()
 }
@@ -102,13 +102,13 @@ test('decide gates cite-empty, already-citeable, digest mismatch, table-dirty', 
 
 	const dirty: LoadedTree = {
 		...loadTree(process.cwd()),
-		dirtyTables: ['src/notifications/NotificationList.states.md'],
+		dirtyTables: ['src/board/Board.states.md'],
 	}
 	const dirtyResult = derive(dirty)
 	assert.equal(decide(dirtyResult, dirtyResult.type === 'ready' ? dirtyResult.proposal.digest : '').type, 'refuse')
 })
 
-test('live tree: stable digest, six parallel-name, no Covers, no AsyncList', () => {
+test('live tree stays an empty catalog with no notification screen', () => {
 	const first = derive(loadTree(process.cwd()))
 	const second = derive(loadTree(process.cwd()))
 	assert.equal(first.type, 'ready')
@@ -116,22 +116,11 @@ test('live tree: stable digest, six parallel-name, no Covers, no AsyncList', () 
 	if (first.type !== 'ready' || second.type !== 'ready') return
 
 	assert.equal(first.proposal.digest, second.proposal.digest)
-	assert.equal(first.proposal.predicted.length, 6)
+	assert.equal(first.proposal.predicted.length, 0)
 	assert.ok(!first.proposal.rendered.includes('Covers:'))
 	assert.ok(!first.proposal.rendered.includes('AsyncList'))
-
-	const names = first.proposal.claims
-		.filter((c) => c.type === 'component')
-		.map((c) => c.codeName)
-	assert.ok(names.includes('EmptyNotifications'))
-	assert.ok(names.includes('NotificationRow'))
-
-	const listJs = readFileSync(join(process.cwd(), 'src/notifications/NotificationList.js'), 'utf8')
-	for (const name of names) assert.ok(listJs.includes(name))
-
-	const css = readFileSync(join(process.cwd(), 'src/notifications/notifications.css'), 'utf8')
-	for (const claim of first.proposal.claims) {
-		if (claim.type !== 'token') continue
-		assert.ok(css.includes(claim.codeName))
-	}
+	assert.doesNotMatch(first.proposal.rendered, /notification/i)
+	assert.doesNotMatch(first.proposal.rendered, /unread/i)
+	const names = first.proposal.claims.filter((c) => c.type === 'component').map((c) => c.codeName)
+	assert.deepEqual(names, [])
 })
