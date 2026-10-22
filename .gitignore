@@ -1,4 +1,5 @@
 node_modules/
+.dstack-verify/
 
 # FMC-579 intermediate trees (committed package lives under .audit/builds and .audit/proof)
 .audit/runs/

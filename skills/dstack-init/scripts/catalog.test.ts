@@ -108,7 +108,7 @@ test('decide gates cite-empty, already-citeable, digest mismatch, table-dirty', 
 	assert.equal(decide(dirtyResult, dirtyResult.type === 'ready' ? dirtyResult.proposal.digest : '').type, 'refuse')
 })
 
-test('live tree: stable digest, six parallel-name, no Covers, no AsyncList', () => {
+test('live tree: stable digest, parallel-name predictions, no Covers, no AsyncList', () => {
 	const first = derive(loadTree(process.cwd()))
 	const second = derive(loadTree(process.cwd()))
 	assert.equal(first.type, 'ready')
@@ -116,7 +116,7 @@ test('live tree: stable digest, six parallel-name, no Covers, no AsyncList', () 
 	if (first.type !== 'ready' || second.type !== 'ready') return
 
 	assert.equal(first.proposal.digest, second.proposal.digest)
-	assert.equal(first.proposal.predicted.length, 6)
+	assert.equal(first.proposal.predicted.length, 10)
 	assert.ok(!first.proposal.rendered.includes('Covers:'))
 	assert.ok(!first.proposal.rendered.includes('AsyncList'))
 
@@ -125,6 +125,7 @@ test('live tree: stable digest, six parallel-name, no Covers, no AsyncList', () 
 		.map((c) => c.codeName)
 	assert.ok(names.includes('EmptyNotifications'))
 	assert.ok(names.includes('NotificationRow'))
+	assert.ok(names.includes('UnreadBadge'))
 
 	const listJs = readFileSync(join(process.cwd(), 'src/notifications/NotificationList.js'), 'utf8')
 	for (const name of names) assert.ok(listJs.includes(name))
