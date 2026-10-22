@@ -10,6 +10,7 @@ import {
 	checkScreens,
 	parseRules,
 	report,
+	skillCorrectionChecks,
 	tablePath,
 } from './model.ts'
 
@@ -120,6 +121,18 @@ function main(argv: readonly string[]): Exit {
 		branches.set(path, branchFor(root, path, changed))
 		return { path: tablePath(path), text: readFileSync(join(root, path), 'utf8') }
 	})
+	const correctionLoad = skillCorrectionChecks()
+	if (!correctionLoad.ok) {
+		for (const error of correctionLoad.errors) {
+			if (error.type === 'missing-file') process.stderr.write('skills/dstack/SKILL.md not found.\n')
+			else if (error.type === 'no-section') process.stderr.write('skills/dstack/SKILL.md has no ## Corrections section.\n')
+			else process.stderr.write(`Duplicate correction bullet ${error.rule}.\n`)
+		}
+		return 2
+	}
+	for (const check of correctionLoad.checks) {
+		if (check.kind === 'unchecked') process.stderr.write(`${check.rule} is unchecked: ${check.reason}\n`)
+	}
 	const value = checkScreens({
 		rules: parsedRules.rules,
 		rulesPath: RULES_PATH,

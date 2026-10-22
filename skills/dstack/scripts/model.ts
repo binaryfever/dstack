@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 export const RULES_PATH = 'product-rules.md'
 export const TABLE_SUFFIX = '.states.md'
 
@@ -125,11 +128,33 @@ function ruleId(value: string): RuleId {
 	return value as RuleId
 }
 
-type ForbidLiteral = { kind: 'forbid-literal'; rule: RuleId; text: string; literals: NonEmpty<string> }
-type UncheckedCorrection = { kind: 'unchecked'; rule: RuleId; text: string; reason: string }
-type CorrectionCheck = ForbidLiteral | UncheckedCorrection
+export type ForbidLiteral = {
+	kind: 'forbid-literal'
+	rule: RuleId
+	text: string
+	literals: NonEmpty<string>
+}
+
+export type UncheckedCorrection = {
+	kind: 'unchecked'
+	rule: RuleId
+	text: string
+	reason: 'no quoted phrase'
+}
+
+export type CorrectionCheck = ForbidLiteral | UncheckedCorrection
+
+export type CorrectionLoadError =
+	| { type: 'no-section' }
+	| { type: 'duplicate-bullet'; rule: string; text: string }
+	| { type: 'missing-file' }
+
+export type CorrectionLoad =
+	| { ok: true; checks: readonly CorrectionCheck[] }
+	| { ok: false; errors: readonly CorrectionLoadError[] }
 
 const CORRECTION_BULLET = /^- ([CPT]-[a-z0-9-]+): (.+)$/
+const UNCHECKED_REASON = 'no quoted phrase' as const
 
 function quotedLiterals(text: string): string[] {
 	const seen = new Set<string>()
@@ -143,28 +168,41 @@ function quotedLiterals(text: string): string[] {
 	return out
 }
 
-function forbidLiteral(rule: RuleId, text: string): ForbidLiteral {
+function classifyBullet(rule: RuleId, text: string): CorrectionCheck {
 	const phrases = quotedLiterals(text)
-	if (phrases.length === 0) throw new Error(`Correction ${rule} has no quoted phrase.`)
+	if (phrases.length === 0) return { kind: 'unchecked', rule, text, reason: UNCHECKED_REASON }
 	const [first, ...rest] = phrases
 	return { kind: 'forbid-literal', rule, text, literals: [first, ...rest] }
 }
 
-function unchecked(rule: RuleId, text: string, reason: string): UncheckedCorrection {
-	if (text.trim() === '' || reason.trim() === '') throw new Error('unchecked correction needs text and reason.')
-	return { kind: 'unchecked', rule, text, reason }
+export function correctionChecksFromMarkdown(markdown: string): CorrectionLoad {
+	const parsed = parseSkillCorrectionBullets(markdown)
+	if ('noSection' in parsed) return { ok: false, errors: [{ type: 'no-section' }] }
+	const errors: CorrectionLoadError[] = []
+	const seen = new Set<string>()
+	for (const bullet of parsed.bullets) {
+		const key = `${bullet.rule}\0${bullet.text}`
+		if (seen.has(key)) errors.push({ type: 'duplicate-bullet', rule: bullet.rule, text: bullet.text })
+		seen.add(key)
+	}
+	if (errors.length > 0) return { ok: false, errors }
+	const checks = parsed.bullets.map((bullet) => classifyBullet(ruleId(bullet.rule), bullet.text))
+	return { ok: true, checks }
 }
 
-function buildCorrectionChecks(): readonly CorrectionCheck[] {
-	return [
-		forbidLiteral(
-			ruleId('C-empty-state'),
-			'Empty copy names what will appear here, never "No data".',
-		),
-	]
-}
+const SKILL_CORRECTIONS_PATH = join(import.meta.dirname, '..', 'SKILL.md')
 
-const CORRECTION_CHECKS: readonly CorrectionCheck[] = buildCorrectionChecks()
+export function skillCorrectionChecks(): CorrectionLoad {
+	try {
+		const markdown = readFileSync(SKILL_CORRECTIONS_PATH, 'utf8')
+		return correctionChecksFromMarkdown(markdown)
+	} catch (error) {
+		if (error != null && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+			return { ok: false, errors: [{ type: 'missing-file' }] }
+		}
+		throw error
+	}
+}
 
 const SCREEN_SOURCE_EXT: ReadonlySet<string> = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'])
 
@@ -177,14 +215,6 @@ function isScreenSource(path: string): boolean {
 	}
 	return false
 }
-
-export type CorrectionDriftProblem =
-	| { type: 'no-section' }
-	| { type: 'missing-check'; rule: string; text: string }
-	| { type: 'extra-check'; rule: string; text: string }
-	| { type: 'duplicate-bullet'; rule: string; text: string }
-
-export type CorrectionDrift = { ok: true } | { ok: false; problems: readonly CorrectionDriftProblem[] }
 
 function parseSkillCorrectionBullets(skillMarkdown: string): { bullets: { rule: string; text: string }[] } | { noSection: true } {
 	const lines = splitLines(skillMarkdown)
@@ -205,29 +235,6 @@ function parseSkillCorrectionBullets(skillMarkdown: string): { bullets: { rule: 
 		bullets.push({ rule: match[1] ?? '', text: (match[2] ?? '').trim() })
 	}
 	return { bullets }
-}
-
-export function correctionDrift(skillMarkdown: string): CorrectionDrift {
-	const parsed = parseSkillCorrectionBullets(skillMarkdown)
-	if ('noSection' in parsed) return { ok: false, problems: [{ type: 'no-section' }] }
-	const problems: CorrectionDriftProblem[] = []
-	const seen = new Set<string>()
-	for (const bullet of parsed.bullets) {
-		const key = `${bullet.rule}\0${bullet.text}`
-		if (seen.has(key)) problems.push({ type: 'duplicate-bullet', rule: bullet.rule, text: bullet.text })
-		seen.add(key)
-	}
-	const catalog = new Set(CORRECTION_CHECKS.map((check) => `${check.rule}\0${check.text}`))
-	const skill = new Set(parsed.bullets.map((bullet) => `${bullet.rule}\0${bullet.text}`))
-	for (const check of CORRECTION_CHECKS) {
-		const key = `${check.rule}\0${check.text}`
-		if (!skill.has(key)) problems.push({ type: 'missing-check', rule: check.rule, text: check.text })
-	}
-	for (const bullet of parsed.bullets) {
-		const key = `${bullet.rule}\0${bullet.text}`
-		if (!catalog.has(key)) problems.push({ type: 'extra-check', rule: bullet.rule, text: bullet.text })
-	}
-	return problems.length === 0 ? { ok: true } : { ok: false, problems }
 }
 
 function surfaceKind(value: string): SurfaceKind {
@@ -825,11 +832,16 @@ function citedRules(table: StateTable): Set<RuleId> {
 	return cited
 }
 
-function correctionFindings(rules: Rules, table: StateTable, screenFiles: readonly SourceFile[]): Finding[] {
+function correctionFindings(
+	rules: Rules,
+	table: StateTable,
+	screenFiles: readonly SourceFile[],
+	checks: readonly CorrectionCheck[],
+): Finding[] {
 	const findings: Finding[] = []
 	const cited = citedRules(table)
 	const seen = new Set<string>()
-	for (const check of CORRECTION_CHECKS) {
+	for (const check of checks) {
 		if (check.kind === 'unchecked') continue
 		if (!cited.has(check.rule) || !rules.byId.has(check.rule)) continue
 		const rule = rules.byId.get(check.rule)
@@ -1178,6 +1190,9 @@ export function checkScreens(input: {
 	branches: ReadonlyMap<string, BranchView>
 	target: TablePath | null
 }): Report {
+	const correctionLoad = skillCorrectionChecks()
+	if (!correctionLoad.ok) throw new Error('skill correction checks are unavailable')
+	const correctionChecks = correctionLoad.checks
 	const allTables: StateTable[] = []
 	const declared = new Map<string, number>()
 	const findings: Finding[] = []
@@ -1192,7 +1207,7 @@ export function checkScreens(input: {
 		const branch = input.branches.get(item.path)
 		if (branch != null) {
 			findings.push(...checkBranch(input.rules, parsed.table, branch))
-			findings.push(...correctionFindings(input.rules, parsed.table, branch.screenFiles))
+			findings.push(...correctionFindings(input.rules, parsed.table, branch.screenFiles, correctionChecks))
 		}
 	}
 	findings.sort((a, b) => (a.at.line ?? Number.MAX_SAFE_INTEGER) - (b.at.line ?? Number.MAX_SAFE_INTEGER))
