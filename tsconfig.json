@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["skills/dstack/scripts/**/*.ts"]
+  "include": ["skills/dstack/scripts/**/*.ts", "skills/dstack-init/scripts/**/*.ts"]
 }
