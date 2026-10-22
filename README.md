@@ -20,6 +20,24 @@ Design-system load, Corrections, the interrogate gate, and the experience bar ar
 
 The experience bar scores empty copy, header hierarchy, parallel cards, and visual correctness. It is not a playbook. Run `dstack.ts experience rubric` to print the bars. Run `dstack.ts experience score spruce --actor agent --judgment .audit/experience/spruce/agent-judgment.md` to score the spruce proofs under `.audit/proof/`. A blind judge runs the same score command with `--actor judge` and a judge judgment file. `dstack check` does not run this command, and this command does not change the check exit code.
 
+## Interrogate a proposal
+
+When `dstack check` prints a proposal, two screens share a gap. Run the gate before a human accepts that key. Decline does not run the gate. The gate does not edit `product-rules.md`.
+
+The recorded verdict or skip lives under the checkout's git directory at `.git/dstack-gates/<encodeURIComponent(key)>.json`. A linked worktree uses that worktree's git directory. `git status` does not list it.
+
+`/dstack` runs the gate when the proposals count is above 0. `/dstack-accept` runs it when the human names a key on an accept.
+
+From the product repo, `<dstack>` is the skills root named in Install.
+
+```text
+node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts gate uncovered list.failed
+node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts gate uncovered list.failed --panel /tmp/list-failed.panel.json --hash <64 lowercase hex>
+node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts gate unlisted NotificationRow --skip "reason the human wrote"
+```
+
+Exit 0 prints the human text. Exit 3 prints the reviewer packet. Exit 2 is a refusal.
+
 ## Install
 
 Copy each folder under `skills/` into the product's `.cursor/skills/` directory, or install this repo as a Cursor plugin. The product repo keeps `product-rules.md` at its root. Run checks from that repo:

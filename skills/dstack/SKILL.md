@@ -31,6 +31,16 @@ When a reviewer corrects how a rule was used, fix the screen and add `- <rule id
 
 Reply with the table, the check result, the notes, and each proposal under `## Rule proposals (not applied)`. Do not edit `product-rules.md` in this change. Applying or declining a proposal is `/dstack-accept`. Driving the real UI through the states in the table is `/dstack-verify`. Comparing a skill run with a no-skill run is `/dstack-eval`. When the named skill is missing from this repo, stop.
 
+When the proposals count is above 0, run `node --experimental-strip-types <directory of this file>/scripts/dstack.ts gate <key>` for each proposal key.
+
+Exit 0 pastes that stdout under `## Gate`.
+
+Exit 3 is the reviewer packet. Spawn one readonly generalPurpose reviewer per `interrogate reviewers` entry in `.cursor/rules/pstack-models.mdc`. The prompt is the packet bytes after the packet header, verbatim. Write the score JSON from the packet schema. Run `node --experimental-strip-types <directory of this file>/scripts/dstack.ts gate <key> --panel <file> --hash <64-hex>` with the hash the packet printed. Paste the exit 0 stdout under `## Gate`.
+
+Exit 2 pastes stderr and stops.
+
+`stance  block` does not decline the proposal. `stance  clear` does not accept it.
+
 ## Experience
 
 After `dstack check`, score a registered screen with `node --experimental-strip-types <directory of this file>/scripts/dstack.ts experience score <screen-id> --actor agent --judgment <agent-judgment.md>`. Run `experience rubric` for the bars. Write judgment sections only. Leave `no-parallel-card` out of the judgment file.
