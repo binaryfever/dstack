@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -464,6 +464,56 @@ test('the check command reports the draft and writes nothing', () => {
 	assert.equal(result.status, 1)
 	assert.equal(result.stdout.trim(), callSite1)
 	assert.equal(readFileSync(rulesDest, 'utf8'), before)
+})
+
+test('accept writes the cover only with --write and decline unlisted exits 2', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'dstack-accept-'))
+	mkdirSync(join(dir, 'src/notifications'), { recursive: true })
+	mkdirSync(join(dir, 'src/mentions'), { recursive: true })
+	const rulesDest = join(dir, 'product-rules.md')
+	const notificationsDest = join(dir, 'src/notifications/NotificationList.states.md')
+	const mentionsDest = join(dir, 'src/mentions/MentionsList.states.md')
+	cpSync(join(import.meta.dirname, 'fixtures/shop/product-rules.md'), rulesDest)
+	cpSync(join(import.meta.dirname, 'fixtures/shop-two/src/notifications/NotificationList.states.md'), notificationsDest)
+	cpSync(join(import.meta.dirname, 'fixtures/shop-two/src/mentions/MentionsList.states.md'), mentionsDest)
+	spawnSync('git', ['init'], { cwd: dir })
+	spawnSync('git', ['add', '.'], { cwd: dir })
+	const committed = spawnSync('git', ['-c', 'user.email=a@b.c', '-c', 'user.name=dstack', 'commit', '-m', 'shop'], {
+		cwd: dir,
+		encoding: 'utf8',
+	})
+	assert.equal(committed.status, 0)
+	const rulesBefore = readFileSync(rulesDest, 'utf8')
+	const notificationsBefore = readFileSync(notificationsDest, 'utf8')
+	const mentionsBefore = readFileSync(mentionsDest, 'utf8')
+	const script = join(root, 'skills/dstack/scripts/dstack.ts')
+	const run = (args: string[]) =>
+		spawnSync('node', ['--experimental-strip-types', script, ...args], { cwd: dir, encoding: 'utf8' })
+
+	const preview = run(['accept', 'uncovered', 'list.failed'])
+	assert.equal(preview.status, 0)
+	assert.match(preview.stdout, /status  ready/)
+	assert.match(preview.stdout, /write  no/)
+	assert.match(preview.stdout, /Covers: detail\.failed, list\.failed/)
+	assert.equal(readFileSync(rulesDest, 'utf8'), rulesBefore)
+
+	const written = run(['accept', '--write', 'uncovered', 'list.failed'])
+	assert.equal(written.status, 0)
+	assert.match(written.stdout, /write  yes/)
+	const rulesWritten = readFileSync(rulesDest, 'utf8')
+	assert.match(rulesWritten, /Covers: detail\.failed, list\.failed/)
+
+	const again = run(['accept', 'uncovered', 'list.failed', '--write'])
+	assert.equal(again.status, 0)
+	assert.match(again.stdout, /status  current/)
+	assert.match(again.stdout, /write  no/)
+	assert.equal(readFileSync(rulesDest, 'utf8'), rulesWritten)
+
+	const declined = run(['decline', 'unlisted', 'NotificationRow'])
+	assert.equal(declined.status, 2)
+	assert.equal(readFileSync(rulesDest, 'utf8'), rulesWritten)
+	assert.equal(readFileSync(notificationsDest, 'utf8'), notificationsBefore)
+	assert.equal(readFileSync(mentionsDest, 'utf8'), mentionsBefore)
 })
 
 function twoTables(notifications = fixedTable, mentions = mentionsTable) {
