@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # dstack
 
-Read `product-rules.md` at the repo root. Cite rules by id. If that file is missing, stop and tell the user.
+Read `product-rules.md` at the repo root. Cite rules by id. If that file is missing, or it has no `### C-`, `### P-`, or `### T-` heading, stop and tell the user to run `/dstack-init`.
 
 Before any UI code, write `<Screen>.states.md` next to the screen's entry file, or edit the table that is already there.
 

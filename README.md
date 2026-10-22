@@ -16,6 +16,8 @@ Node 22 runs the script. TypeScript is a dev dependency for `npm test` and `npm 
 
 ## Write product-rules.md
 
+A root file with no `### C-`, `### P-`, or `### T-` heading is an empty catalog. Run `/dstack-init`. It scans the product, prints a digest, and writes `product-rules.md` only after you reply `approve <digest>`. It does not edit `*.states.md`. The shop block below is the heading grammar. The scan chooses the ids.
+
 Each rule is a level-3 heading. `C-` is a component, `P-` is a pattern, and `T-` is a token. A component or token names its code symbol in backticks. `Covers:` lists the states that rule owns. `list` means the whole list, so that rule is the list's state machine. `list.loading` means the loading state. A token has a `Value:` line. Other prose is for people.
 
 ```product-rules
