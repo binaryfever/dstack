@@ -114,9 +114,32 @@ export type Report = {
 	proposals: readonly { repeat: Repeat; diff: string }[]
 }
 
+export type IssueKey =
+	| { type: 'uncovered'; coord: StatusCoord }
+	| { type: 'unlisted'; name: CodeName }
+	| { type: 'corrected'; rule: RuleId }
+
+export type Decision =
+	| { action: 'accept'; key: IssueKey }
+	| { action: 'decline'; key: Extract<IssueKey, { type: 'uncovered' }> }
+
+export type CallerFinding = Extract<Finding, { type: 'parallel-name' | 'ignored-cover' }>
+
+type Settled = {
+	rulesText: string
+	callers: readonly CallerFinding[]
+	proposal: 'gone' | 'still-open'
+}
+
+export type DecisionResult =
+	| ({ status: 'ready' } & Settled)
+	| ({ status: 'current' } & Settled)
+	| { status: 'blocked'; problem: string }
+
 const RULE_ID = /^[CPT]-[a-z0-9-]+$/
 const HEADING = /^### ([CPT]-[a-z0-9-]+)(?: `([^`]+)`)?$/
 const UNLISTED = /^unlisted\(([A-Za-z][A-Za-z0-9]*)\)$/
+const CODE_NAME = /^[A-Za-z][A-Za-z0-9]*$/
 
 export function splitLines(text: string): string[] {
 	const lines = text.split('\n')
@@ -888,10 +911,14 @@ function pushHit<T>(map: Map<string, Issue>, key: string, issue: Issue): void {
 	hits.push(...(issue.hits as unknown as unknown[]))
 }
 
-export function issueKey(issue: Issue): string {
+function formatIssueKey(issue: IssueKey): string {
 	if (issue.type === 'uncovered') return `uncovered ${coordKey(issue.coord)}`
 	if (issue.type === 'unlisted') return `unlisted ${issue.name}`
 	return `corrected ${issue.rule}`
+}
+
+export function issueKey(issue: Issue): string {
+	return formatIssueKey(issue)
 }
 
 export function collectIssues(rules: Rules, tables: readonly StateTable[]): { notes: Issue[]; repeats: Repeat[] } {
@@ -969,6 +996,30 @@ function lastRule(rules: Rules, type: RuleType): Rule | null {
 	return found
 }
 
+function winningRule(rules: Rules, cells: readonly Cell[]): RuleId | null {
+	const counts = new Map<string, { id: RuleId; n: number; order: number }>()
+	let order = 0
+	for (const cell of cells) {
+		for (const ref of cell) {
+			if (ref.type !== 'rule') continue
+			const rule = rules.byId.get(ref.id)
+			if (rule == null || rule.type === 'token') continue
+			const prior = counts.get(ref.id)
+			if (prior != null) prior.n += 1
+			else counts.set(ref.id, { id: ref.id, n: 1, order: order++ })
+		}
+	}
+	const ranked = [...counts.values()].sort((a, b) => b.n - a.n || a.order - b.order)
+	return ranked[0]?.id ?? null
+}
+
+function coverWithRendersNothing(rules: Rules, coord: StatusCoord): RuleEdit {
+	const id = freshId(rules, 'P', `${coord.kind}-${coord.state}`)
+	const prior = lastRule(rules, 'pattern')
+	const at = prior == null ? rules.lines.length + 1 : prior.lines.last + 1
+	return { at, remove: [], add: ['', `### ${id}`, `Covers: ${coordKey(coord)}`, 'Renders nothing.'] }
+}
+
 export function propose(rules: Rules, repeat: Repeat): RuleEdit {
 	if (repeat.type === 'corrected') {
 		const rule = rules.byId.get(repeat.rule)
@@ -989,23 +1040,13 @@ export function propose(rules: Rules, repeat: Repeat): RuleEdit {
 		const at = prior == null ? rules.lines.length + 1 : prior.lines.last + 1
 		return { at, remove: [], add: ['', heading] }
 	}
-	const counts = new Map<string, { id: RuleId; n: number; order: number }>()
-	let order = 0
-	for (const hit of repeat.hits) {
-		for (const ref of hit.cell) {
-			if (ref.type !== 'rule') continue
-			const rule = rules.byId.get(ref.id)
-			if (rule == null || rule.type === 'token') continue
-			const prior = counts.get(ref.id)
-			if (prior != null) prior.n += 1
-			else counts.set(ref.id, { id: ref.id, n: 1, order: order++ })
-		}
-	}
-	const ranked = [...counts.values()].sort((a, b) => b.n - a.n || a.order - b.order)
-	const winner = ranked[0]
 	const key = coordKey(repeat.coord)
+	const winner = winningRule(
+		rules,
+		repeat.hits.map((hit) => hit.cell),
+	)
 	if (winner != null) {
-		const rule = rules.byId.get(winner.id)
+		const rule = rules.byId.get(winner)
 		if (rule != null && rule.type !== 'token' && rule.lines.covers != null) {
 			const coversLine = rules.lines[rule.lines.covers - 1] ?? ''
 			return { at: rule.lines.covers, remove: [coversLine], add: [`${coversLine}, ${key}`] }
@@ -1022,10 +1063,7 @@ export function propose(rules: Rules, repeat: Repeat): RuleEdit {
 		const at = prior == null ? rules.lines.length + 1 : prior.lines.last + 1
 		return { at, remove: [], add: ['', `### ${id} \`${name}\``, `Covers: ${key}`] }
 	}
-	const id = freshId(rules, 'P', `${repeat.coord.kind}-${repeat.coord.state}`)
-	const prior = lastRule(rules, 'pattern')
-	const at = prior == null ? rules.lines.length + 1 : prior.lines.last + 1
-	return { at, remove: [], add: ['', `### ${id}`, `Covers: ${key}`, 'Renders nothing.'] }
+	return coverWithRendersNothing(rules, repeat.coord)
 }
 
 export function renderDiff(rules: Rules, edit: RuleEdit): string {
@@ -1227,4 +1265,225 @@ export function checkScreens(input: {
 		notes,
 		proposals: repeats.map((repeat) => ({ repeat, diff: renderDiff(input.rules, propose(input.rules, repeat)) })),
 	}
+}
+
+export function parseDecision(
+	action: string,
+	key: string,
+): { ok: true; decision: Decision } | { ok: false; problem: string } {
+	if (action !== 'accept' && action !== 'decline') return { ok: false, problem: `Bad action ${action}.` }
+	const space = key.indexOf(' ')
+	const type = space === -1 ? '' : key.slice(0, space)
+	const rest = space === -1 ? '' : key.slice(space + 1)
+	if (type === 'uncovered' && rest.length > 0 && !rest.includes(' ')) {
+		const coord = parseCoord(rest)
+		if (coord == null || coord.state == null || coord.state === 'populated') {
+			return { ok: false, problem: `Bad coordinate ${rest}.` }
+		}
+		const status = { kind: coord.kind, state: coord.state }
+		if (action === 'decline') return { ok: true, decision: { action: 'decline', key: { type: 'uncovered', coord: status } } }
+		return { ok: true, decision: { action: 'accept', key: { type: 'uncovered', coord: status } } }
+	}
+	if (action === 'decline') return { ok: false, problem: 'Decline names an uncovered coordinate.' }
+	if (type === 'unlisted' && CODE_NAME.test(rest)) {
+		return { ok: true, decision: { action: 'accept', key: { type: 'unlisted', name: codeName(rest) } } }
+	}
+	if (type === 'corrected' && RULE_ID.test(rest)) {
+		return { ok: true, decision: { action: 'accept', key: { type: 'corrected', rule: ruleId(rest) } } }
+	}
+	return { ok: false, problem: `Bad key ${key}.` }
+}
+
+function repeatIndex(rules: Rules, tables: readonly StateTable[]): Map<string, Repeat> {
+	const index = new Map<string, Repeat>()
+	for (const repeat of collectIssues(rules, tables).repeats) index.set(issueKey(repeat), repeat)
+	return index
+}
+
+function cellsForCoord(tables: readonly StateTable[], coord: StatusCoord): Cell[] {
+	const cells: Cell[] = []
+	for (const table of tables) {
+		for (const surface of table.surfaces) {
+			if (surface.kind !== coord.kind) continue
+			const cell = (surface.cells as Readonly<Record<string, Cell>>)[coord.state]
+			if (cell != null) cells.push(cell)
+		}
+	}
+	return cells
+}
+
+function spanLines(rules: Rules, rule: Rule): string[] {
+	const lines: string[] = []
+	for (let line = rule.lines.heading; line <= rule.lines.last; line++) lines.push(rules.lines[line - 1] ?? '')
+	return lines
+}
+
+function rendersNothing(rules: Rules, id: RuleId): boolean {
+	const rule = rules.byId.get(id)
+	if (rule == null) return false
+	return spanLines(rules, rule).includes('Renders nothing.')
+}
+
+function callerFindings(rules: Rules, tables: readonly StateTable[]): CallerFinding[] {
+	const callers: CallerFinding[] = []
+	for (const table of tables) {
+		for (const finding of checkTable(rules, table)) {
+			if (finding.type === 'parallel-name' || finding.type === 'ignored-cover') callers.push(finding)
+		}
+	}
+	return callers
+}
+
+function settledCurrent(
+	rules: Rules,
+	rulesText: string,
+	tables: readonly StateTable[],
+	proposal: Settled['proposal'],
+): DecisionResult {
+	return { status: 'current', rulesText, callers: callerFindings(rules, tables), proposal }
+}
+
+function settleEdit(
+	rulesText: string,
+	tables: readonly StateTable[],
+	edit: RuleEdit,
+	proposal: Settled['proposal'],
+	holds: (rules: Rules) => boolean,
+): DecisionResult {
+	const nextText = applyEdit(rulesText, edit)
+	const parsed = parseRules(nextText)
+	if (!parsed.ok || !holds(parsed.rules)) {
+		const problem = parsed.ok ? 'The rules edit did not settle.' : parsed.errors.map((error) => error.problem).join(' ')
+		return { status: 'blocked', problem }
+	}
+	return { status: 'ready', rulesText: nextText, callers: callerFindings(parsed.rules, tables), proposal }
+}
+
+function distinctHitText(hits: readonly { text: string }[]): string[] {
+	const seen = new Set<string>()
+	const texts: string[] = []
+	for (const hit of hits) {
+		if (seen.has(hit.text)) continue
+		seen.add(hit.text)
+		texts.push(hit.text)
+	}
+	return texts
+}
+
+function correctionSettled(rules: Rules, id: RuleId, texts: readonly string[]): boolean {
+	const rule = rules.byId.get(id)
+	if (rule == null) return false
+	const lines = spanLines(rules, rule)
+	return texts.every((text) => lines.filter((line) => line === text).length === 1)
+}
+
+function declineSettled(rules: Rules, coord: StatusCoord): boolean {
+	const id = rules.coveredBy.get(coordKey(coord))
+	if (id == null) return false
+	return rendersNothing(rules, id)
+}
+
+function declineIdCoversOther(rules: Rules, coord: StatusCoord): boolean {
+	const existing = rules.byId.get(ruleId(`P-${coord.kind}-${coord.state}`))
+	if (existing == null || existing.type === 'token') return false
+	const key = coordKey(coord)
+	return existing.covers.some((item) => coordKey(item) !== key)
+}
+
+function decideUncovered(
+	rules: Rules,
+	rulesText: string,
+	tables: readonly StateTable[],
+	index: ReadonlyMap<string, Repeat>,
+	action: Decision['action'],
+	coord: StatusCoord,
+): DecisionResult {
+	const key = coordKey(coord)
+	const cover = rules.coveredBy.get(key)
+	if (cover != null) {
+		const winner = winningRule(rules, cellsForCoord(tables, coord))
+		const quiet = rendersNothing(rules, cover)
+		if (action === 'accept' && (winner === cover || (winner == null && quiet))) {
+			return settledCurrent(rules, rulesText, tables, 'gone')
+		}
+		if (action === 'decline' && quiet && winner !== cover) return settledCurrent(rules, rulesText, tables, 'gone')
+		return { status: 'blocked', problem: `${cover} already covers ${key}.` }
+	}
+	const repeat = index.get(formatIssueKey({ type: 'uncovered', coord }))
+	if (repeat == null || repeat.type !== 'uncovered') {
+		return { status: 'blocked', problem: `uncovered ${key} is not a proposal.` }
+	}
+	if (action === 'accept') {
+		return settleEdit(rulesText, tables, propose(rules, repeat), 'gone', (next) => next.coveredBy.has(key))
+	}
+	if (declineIdCoversOther(rules, coord)) {
+		return { status: 'blocked', problem: `P-${coord.kind}-${coord.state} already covers a different coordinate.` }
+	}
+	return settleEdit(rulesText, tables, coverWithRendersNothing(rules, coord), 'gone', (next) => declineSettled(next, coord))
+}
+
+function decideUnlisted(
+	rules: Rules,
+	rulesText: string,
+	tables: readonly StateTable[],
+	index: ReadonlyMap<string, Repeat>,
+	name: CodeName,
+): DecisionResult {
+	if (rules.byCodeName.has(name)) return settledCurrent(rules, rulesText, tables, 'gone')
+	const repeat = index.get(formatIssueKey({ type: 'unlisted', name }))
+	if (repeat == null || repeat.type !== 'unlisted') {
+		return { status: 'blocked', problem: `unlisted ${name} is not a proposal.` }
+	}
+	return settleEdit(rulesText, tables, propose(rules, repeat), 'gone', (next) => next.byCodeName.has(name))
+}
+
+function decideCorrected(
+	rules: Rules,
+	rulesText: string,
+	tables: readonly StateTable[],
+	index: ReadonlyMap<string, Repeat>,
+	id: RuleId,
+): DecisionResult {
+	const repeat = index.get(formatIssueKey({ type: 'corrected', rule: id }))
+	if (repeat == null || repeat.type !== 'corrected') {
+		return { status: 'blocked', problem: `corrected ${id} is not a proposal.` }
+	}
+	const rule = rules.byId.get(id)
+	if (rule == null) return { status: 'blocked', problem: `corrected ${id} is not a proposal.` }
+	const texts = distinctHitText(repeat.hits)
+	const present = texts.filter((text) => spanLines(rules, rule).includes(text))
+	if (present.length === texts.length) return settledCurrent(rules, rulesText, tables, 'still-open')
+	if (present.length > 0) return { status: 'blocked', problem: `${id} already has some of those correction lines.` }
+	return settleEdit(rulesText, tables, propose(rules, repeat), 'still-open', (next) => correctionSettled(next, id, texts))
+}
+
+export function decide(input: {
+	rules: Rules
+	rulesText: string
+	tables: readonly StateTable[]
+	decision: Decision
+}): DecisionResult {
+	const index = repeatIndex(input.rules, input.tables)
+	const key = input.decision.key
+	if (key.type === 'unlisted') return decideUnlisted(input.rules, input.rulesText, input.tables, index, key.name)
+	if (key.type === 'corrected') return decideCorrected(input.rules, input.rulesText, input.tables, index, key.rule)
+	return decideUncovered(input.rules, input.rulesText, input.tables, index, input.decision.action, key.coord)
+}
+
+export function formatDecision(
+	decision: Decision,
+	result: Exclude<DecisionResult, { status: 'blocked' }>,
+	wrote: boolean,
+): string {
+	const lines = [
+		`decision  ${decision.action} ${formatIssueKey(decision.key)}`,
+		`status  ${result.status}`,
+		`proposal  ${result.proposal}`,
+		`write  ${wrote ? 'yes' : 'no'}`,
+		`callers  ${result.callers.length}`,
+	]
+	for (const caller of result.callers) lines.push(findingLine(caller))
+	lines.push('')
+	lines.push(RULES_PATH)
+	return `${lines.join('\n')}\n${result.rulesText}`
 }
