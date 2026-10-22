@@ -69,7 +69,6 @@ export type Decision =
 
 const SOURCE_EXT = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'])
 const RULE_ID = /^[CPT]-[a-z0-9-]+$/
-const FIXTURE_PROPOSALS = new Set(['C-empty-inbox', 'C-spinner', 'C-error-banner'])
 
 export function partition(paths: readonly string[]): {
 	rules: string | null
@@ -695,16 +694,7 @@ function buildCheckReport(rendered: string, tree: LoadedTree): string {
 		target: null,
 	})
 
-	const lines = [report(value), '', 'Do not apply fixture proposals C-empty-inbox, C-spinner, or C-error-banner.']
-	for (const proposal of value.proposals) {
-		for (const diffLine of proposal.diff.split('\n')) {
-			const m = diffLine.match(/### (C-[a-z0-9-]+)/)
-			if (m != null && FIXTURE_PROPOSALS.has(m[1] ?? '')) {
-				lines.push(`(fixture proposal ${m[1]} — do not apply)`)
-			}
-		}
-	}
-	return lines.join('\n')
+	return report(value)
 }
 
 export function derive(tree: LoadedTree): DeriveResult {
@@ -882,4 +872,4 @@ export function formatShow(proposal: Proposal): string {
 	return lines.join('\n')
 }
 
-export { FIXTURE_PROPOSALS, RULE_ID }
+export { RULE_ID }

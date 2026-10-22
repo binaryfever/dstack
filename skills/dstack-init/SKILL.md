@@ -28,6 +28,4 @@ When invoked as `/dstack-init`:
 
 Leave every `*.states.md` untouched. On `digest-mismatch`, run show again and stop. On `unchanged` or `already-citeable`, stop. Proposal application stays in `/dstack-accept`.
 
-If the check report lists proposals `C-empty-inbox`, `C-spinner`, or `C-error-banner`, do not apply them. They come from shop fixtures, not this product.
-
 `tables-dirty` on show means write will refuse until those tables are out of the diff.
