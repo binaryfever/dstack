@@ -140,22 +140,39 @@ async function startDetachedServer(root: string): Promise<{ pid: number; port: n
 }
 
 async function stopChrome(chrome: ChildProcess) {
+	const pid = chrome.pid
 	try {
-		chrome.kill('SIGKILL')
+		if (pid != null) process.kill(-pid, 'SIGKILL')
 	} catch {
-		/* already stopped */
+		try {
+			chrome.kill('SIGKILL')
+		} catch {
+			/* already stopped */
+		}
 	}
 	await Promise.race([
 		new Promise<void>((resolve) => {
 			chrome.once('exit', () => resolve())
 		}),
-		new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+		new Promise<void>((resolve) => setTimeout(resolve, 3000)),
 	])
 }
 
-function removePath(target: string) {
+async function removePath(target: string) {
 	if (!fs.existsSync(target)) return
-	fs.rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+	let lastError: unknown
+	for (let attempt = 0; attempt < 12; attempt++) {
+		try {
+			fs.rmSync(target, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 })
+			if (!fs.existsSync(target)) return
+		} catch (error) {
+			lastError = error
+		}
+		await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)))
+	}
+	if (fs.existsSync(target)) {
+		throw lastError instanceof Error ? lastError : new Error(`could not remove ${target}`)
+	}
 }
 
 async function startChrome(profileDir: string): Promise<{ chrome: ChildProcess; debugPort: string }> {
@@ -163,7 +180,7 @@ async function startChrome(profileDir: string): Promise<{ chrome: ChildProcess; 
 	const chrome = spawn(
 		chromePath,
 		['--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', `--user-data-dir=${profileDir}`, '--remote-debugging-port=0', 'about:blank'],
-		{ stdio: 'ignore' },
+		{ stdio: 'ignore', detached: true },
 	)
 	const portFile = path.join(profileDir, 'DevToolsActivePort')
 	const debugPort = await waitFor(() => {
@@ -392,12 +409,17 @@ async function cmdCleanup() {
 	if (fs.existsSync(serverInfoPath)) fs.unlinkSync(serverInfoPath)
 	if (run?.chromePid) {
 		try {
-			process.kill(run.chromePid)
+			process.kill(-run.chromePid, 'SIGKILL')
 		} catch {
-			/* already stopped */
+			try {
+				process.kill(run.chromePid, 'SIGKILL')
+			} catch {
+				/* already stopped */
+			}
 		}
+		await new Promise((resolve) => setTimeout(resolve, 500))
 	}
-	if (run?.profileDir) removePath(run.profileDir)
+	if (run?.profileDir) await removePath(run.profileDir)
 	if (fs.existsSync(runPath)) fs.unlinkSync(runPath)
 	console.log('dstack-verify cleanup: ok (evidence kept under .dstack-verify/evidence/)')
 }
@@ -432,10 +454,9 @@ async function cmdProve(featureId: string) {
 		server.close()
 		await stopChrome(chrome)
 		try {
-			removePath(profileDir)
+			await removePath(profileDir)
 		} catch (error) {
-			console.error(error instanceof Error ? error.message : String(error))
-			if (process.exitCode == null) process.exitCode = 1
+			console.error(`dstack-verify: left profile after kill: ${error instanceof Error ? error.message : String(error)}`)
 		}
 		if (fs.existsSync(runPath)) fs.unlinkSync(runPath)
 	}
