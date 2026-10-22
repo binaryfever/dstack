@@ -32,3 +32,9 @@ Fix every error. The error names the rule and its line in `product-rules.md`.
 When a reviewer corrects how a rule was used, fix the screen and add `- <rule id>: <what changed>` under `## Corrections`.
 
 Reply with the table, the check result, the notes, and each proposal under `## Rule proposals (not applied)`. Do not edit `product-rules.md` in this change. Applying or declining a proposal is `/dstack-accept`. Driving the real UI through empty, loading, failed, and populated is `/dstack-verify`. Comparing a skill run with a no-skill run is `/dstack-eval`. When the named skill is missing from this repo, stop.
+
+## Experience
+
+After `dstack check`, score a registered screen with `node --experimental-strip-types <directory of this file>/scripts/dstack.ts experience score <screen-id> --actor agent --judgment <agent-judgment.md>`. Run `experience rubric` for the bars. Write judgment sections only. Leave `no-parallel-card` out of the judgment file.
+
+An experience miss is not a correction bullet and not a rule proposal. Do not edit `product-rules.md` to record it. Driving the live UI remains `/dstack-verify`. When that skill is missing, stop that request.

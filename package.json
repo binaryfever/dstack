@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test skills/dstack/scripts/model.test.ts skills/dstack-init/scripts/catalog.test.ts src/notifications/NotificationList.test.js"
+    "test": "node --experimental-strip-types --test skills/dstack/scripts/model.test.ts skills/dstack/scripts/experience.test.ts skills/dstack-init/scripts/catalog.test.ts src/notifications/NotificationList.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

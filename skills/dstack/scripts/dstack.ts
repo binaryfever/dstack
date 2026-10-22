@@ -17,6 +17,7 @@ import {
 	skillCorrectionChecks,
 	tablePath,
 } from './model.ts'
+import { experienceCommand } from './experience.ts'
 
 type Exit = 0 | 1 | 2
 
@@ -25,6 +26,9 @@ usage: dstack accept [--write] uncovered <kind.state>
 usage: dstack accept [--write] unlisted <CodeName>
 usage: dstack accept [--write] corrected <RuleId>
 usage: dstack decline [--write] uncovered <kind.state>
+usage: dstack experience rubric
+usage: dstack experience score <screen> --actor agent|judge --judgment <file>
+usage: dstack experience compare <agent-score> <judge-score>
 `
 
 function git(repo: string, args: readonly string[]): string | null {
@@ -169,6 +173,14 @@ function settle(argv: readonly string[]): 0 | 2 {
 
 function main(argv: readonly string[]): Exit {
 	if (argv[0] === 'accept' || argv[0] === 'decline') return settle(argv)
+	if (argv[0] === 'experience') {
+		const root = repoRoot()
+		if (root == null) {
+			process.stderr.write('dstack experience needs a git checkout.\n')
+			return 2
+		}
+		return experienceCommand(root, argv.slice(1))
+	}
 	if (argv[0] !== 'check' || argv.length > 2) {
 		process.stderr.write(USAGE)
 		return 2

@@ -16,6 +16,10 @@ Each job is its own skill. The playbook tells the agent which job to run. `dstac
 
 Design-system load, Corrections, the interrogate gate, and the experience bar are not playbooks.
 
+## Experience
+
+The experience bar scores empty copy, header and badge hierarchy, parallel cards, and visual correctness. It is not a playbook. Run `dstack.ts experience rubric` to print the bars. Run `dstack.ts experience score spruce --actor agent --judgment .audit/experience/spruce/agent-judgment.md` to score the spruce proofs under `.audit/proof/`. A blind judge runs the same score command with `--actor judge` and a judge judgment file. `dstack check` does not run this command, and this command does not change the check exit code.
+
 ## Install
 
 Copy each folder under `skills/` into the product's `.cursor/skills/` directory, or install this repo as a Cursor plugin. The product repo keeps `product-rules.md` at its root. Run checks from that repo:
