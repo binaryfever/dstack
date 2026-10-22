@@ -1,10 +1,12 @@
 ---
 name: dstack
-description: "Build product UI against the repo's product-rules.md. Writes a state table per screen, reuses the components, patterns, and tokens the rules name, and turns a gap seen in two screens into a proposed edit to product-rules.md. Use for /dstack."
+description: "Build one product screen from product-rules.md. Write the state table first, reuse the components, patterns, and tokens the rules name, and propose a rules edit when two screens share a gap. Use for /dstack, building a screen, or writing a state table. Bootstrapping product-rules.md is /dstack-init. Applying a proposal is /dstack-accept. Driving the UI is /dstack-verify. A skill regression is /dstack-eval."
 disable-model-invocation: true
 ---
 
 # dstack
+
+Build one screen. The repo README lists the other skills under Playbooks.
 
 Read `product-rules.md` at the repo root. Cite rules by id. If that file is missing, or it has no `### C-`, `### P-`, or `### T-` heading, stop and tell the user to run `/dstack-init`.
 
@@ -29,4 +31,4 @@ Fix every error. The error names the rule and its line in `product-rules.md`.
 
 When a reviewer corrects how a rule was used, fix the screen and add `- <rule id>: <what changed>` under `## Corrections`.
 
-Reply with the table, the check result, the notes, and each proposal under `## Rule proposals (not applied)`. Do not edit `product-rules.md` in this change.
+Reply with the table, the check result, the notes, and each proposal under `## Rule proposals (not applied)`. Do not edit `product-rules.md` in this change. Applying or declining a proposal is `/dstack-accept`. Driving the real UI through empty, loading, failed, and populated is `/dstack-verify`. Comparing a skill run with a no-skill run is `/dstack-eval`. When the named skill is missing from this repo, stop.

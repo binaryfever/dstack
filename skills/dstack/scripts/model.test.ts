@@ -410,6 +410,17 @@ test('table correction bullets stay soft and do not scan as forbids', () => {
 	assert.ok(value.notes.some((note) => note.type === 'corrected' && note.rule === 'C-empty-state'))
 })
 
+test('the readme lists each playbook and dstack points at the siblings', () => {
+	const readme = readFileSync(join(root, 'README.md'), 'utf8')
+	const skill = readFileSync(join(root, 'skills/dstack/SKILL.md'), 'utf8')
+	const playbooks = readme.split('## Playbooks')[1]?.split('\n## ')[0] ?? ''
+	const jobs = ['/dstack', '/dstack-init', '/dstack-accept', '/dstack-verify', '/dstack-eval']
+	for (const job of jobs) assert.ok(playbooks.includes(`| \`${job}\` |`), job)
+	for (const job of jobs.slice(1)) assert.ok(skill.includes(job), job)
+	const init = readFileSync(join(root, 'skills/dstack-init/SKILL.md'), 'utf8')
+	assert.match(init, /^name: dstack-init$/m)
+})
+
 test('the skill example and the readme rules parse', () => {
 	const skill = readFileSync(join(root, 'skills/dstack/SKILL.md'), 'utf8')
 	assert.ok(skill.includes(RULES_PATH))
