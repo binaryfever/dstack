@@ -108,21 +108,6 @@ export function NotificationError() {
 	</div>`
 }
 
-export function unreadCount(items) {
-	return items.reduce((count, item) => count + (item.unread ? 1 : 0), 0)
-}
-
-export function badgeCountForStatus(status, items) {
-	if (status === 'success') return unreadCount(items)
-	return 0
-}
-
-export function UnreadBadge(count) {
-	if (count <= 0) return ''
-	const text = count > 99 ? '99+' : String(count)
-	return `<span class="badge" aria-label="${escapeHtml(text)} unread">${escapeHtml(text)}</span>`
-}
-
 export function renderNotificationList(status, { now, items }) {
 	if (status === 'empty') return EmptyNotifications()
 	if (status === 'loading') return NotificationSkeleton()
@@ -140,22 +125,16 @@ export function mount(root, options = {}) {
 		([value, label]) => `<button type="button" data-status="${value}" aria-pressed="false">${label}</button>`,
 	).join('')
 	root.innerHTML = `<section class="shell">
-		<header class="titlebar">
-			<h1>Notifications</h1>
-			<div class="badge-slot"></div>
-		</header>
+		<h1>Notifications</h1>
 		<div class="switcher" role="group" aria-label="Notification state">${buttons}</div>
 		<div class="panel"></div>
 	</section>`
-	const badgeSlot = root.querySelector('.badge-slot')
-	if (badgeSlot == null) throw new Error('Notification list is missing its badge slot.')
 	const panel = root.querySelector('.panel')
 	if (panel == null) throw new Error('Notification list is missing its panel.')
 
 	function draw() {
 		panel.dataset.state = status
 		panel.innerHTML = renderNotificationList(status, { now, items })
-		badgeSlot.innerHTML = UnreadBadge(badgeCountForStatus(status, items))
 		for (const button of root.querySelectorAll('[data-status]')) {
 			button.setAttribute('aria-pressed', button.getAttribute('data-status') === status ? 'true' : 'false')
 		}

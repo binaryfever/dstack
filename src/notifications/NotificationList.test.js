@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-	UnreadBadge,
-	badgeCountForStatus,
 	relativeTime,
 	renderNotificationList,
 	sampleNotifications,
-	unreadCount,
 } from './NotificationList.js'
 
 const now = new Date('2026-10-11T21:00:00Z')
@@ -50,20 +47,4 @@ test('success renders one row per notification with avatar and relative time', (
 test('relative time switches to a date after a week', () => {
 	assert.equal(relativeTime(new Date('2026-10-11T20:30:00Z'), now), '30m')
 	assert.equal(relativeTime(new Date('2026-10-04T21:00:00Z'), now), 'Oct 4')
-})
-
-test('unread badge hides at zero and caps above 99', () => {
-	assert.equal(UnreadBadge(0), '')
-	assert.match(UnreadBadge(2), />2</)
-	assert.match(UnreadBadge(2), /aria-label="2 unread"/)
-	assert.match(UnreadBadge(100), />99\+</)
-	assert.match(UnreadBadge(100), /aria-label="99\+ unread"/)
-})
-
-test('badge count follows the status switcher', () => {
-	assert.equal(badgeCountForStatus('empty', items), 0)
-	assert.equal(badgeCountForStatus('loading', items), 0)
-	assert.equal(badgeCountForStatus('error', items), 0)
-	assert.equal(badgeCountForStatus('success', items), unreadCount(items))
-	assert.equal(unreadCount(items), 2)
 })
