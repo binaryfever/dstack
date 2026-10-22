@@ -79,4 +79,13 @@ Two rules cannot cover the same state. The check names both headings when they d
 
 ## Accept a proposal
 
-The skill for this job is `/dstack-accept`. A proposal is a unified diff in the check output. Apply it in a change that does not touch a `*.states.md` file. The next check then tells every screen that still cites the old name to use the new rule. A decline is also a rules edit, such as a `Covers:` line that says the state renders nothing, so the decision lives in `product-rules.md`.
+The skill for this job is `/dstack-accept`. From the product repo, run one of these commands. `<dstack>` is the same path as in Install.
+
+```text
+node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts accept [--write] uncovered <kind.state>
+node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts accept [--write] unlisted <CodeName>
+node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts accept [--write] corrected <RuleId>
+node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts decline [--write] uncovered <kind.state>
+```
+
+`--write` is the only write. Put it once, before the key or after it. Without `--write`, the command prints the next `product-rules.md` and the caller lines. The command leaves that file unchanged. If stdout says `status  current`, the command did not write. The command does not edit a state table. The command does not commit.

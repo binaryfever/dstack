@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import {
 	RULES_PATH,
@@ -8,13 +8,24 @@ import {
 	type SourceFile,
 	type TablePath,
 	checkScreens,
+	decide,
+	formatDecision,
+	parseDecision,
 	parseRules,
+	parseTable,
 	report,
 	skillCorrectionChecks,
 	tablePath,
 } from './model.ts'
 
 type Exit = 0 | 1 | 2
+
+const USAGE = `usage: dstack check [table.states.md]
+usage: dstack accept [--write] uncovered <kind.state>
+usage: dstack accept [--write] unlisted <CodeName>
+usage: dstack accept [--write] corrected <RuleId>
+usage: dstack decline [--write] uncovered <kind.state>
+`
 
 function git(repo: string, args: readonly string[]): string | null {
 	const result = spawnSync('git', [...args], { cwd: repo, encoding: 'utf8' })
@@ -84,9 +95,82 @@ function branchFor(root: string, table: string, changed: Set<string>): BranchVie
 	}
 }
 
+function settleArgs(
+	argv: readonly string[],
+): { action: 'accept' | 'decline'; write: boolean; key: string } | null {
+	const action = argv[0]
+	if (action !== 'accept' && action !== 'decline') return null
+	const words: string[] = []
+	let write = false
+	for (const arg of argv.slice(1)) {
+		if (arg === '--write') {
+			if (write) return null
+			if (words.length !== 0 && words.length !== 2) return null
+			write = true
+			continue
+		}
+		if (arg.startsWith('-')) return null
+		words.push(arg)
+	}
+	if (words.length !== 2) return null
+	return { action, write, key: `${words[0]} ${words[1]}` }
+}
+
+function writeRules(root: string, rendered: string): void {
+	const target = join(root, RULES_PATH)
+	const tmp = `${target}.tmp`
+	writeFileSync(tmp, rendered, 'utf8')
+	renameSync(tmp, target)
+}
+
+function settle(argv: readonly string[]): 0 | 2 {
+	const args = settleArgs(argv)
+	if (args == null) {
+		process.stderr.write(USAGE)
+		return 2
+	}
+	const parsedDecision = parseDecision(args.action, args.key)
+	if (!parsedDecision.ok) {
+		process.stderr.write(`${parsedDecision.problem}\n`)
+		return 2
+	}
+	const root = repoRoot()
+	if (root == null) {
+		process.stderr.write(`dstack ${args.action} needs a git checkout.\n`)
+		return 2
+	}
+	const rulesFile = join(root, RULES_PATH)
+	if (!existsSync(rulesFile)) {
+		process.stderr.write(`${RULES_PATH} not found at ${root}. See the dstack README for the format.\n`)
+		return 2
+	}
+	const rulesText = readFileSync(rulesFile, 'utf8')
+	const parsedRules = parseRules(rulesText)
+	if (!parsedRules.ok) {
+		for (const error of parsedRules.errors) process.stderr.write(`${RULES_PATH}:${error.line} ${error.problem}\n`)
+		return 2
+	}
+	const tables = listTables(root).map((path) => parseTable(tablePath(path), readFileSync(join(root, path), 'utf8')).table)
+	const result = decide({
+		rules: parsedRules.rules,
+		rulesText,
+		tables,
+		decision: parsedDecision.decision,
+	})
+	if (result.status === 'blocked') {
+		process.stderr.write(`${result.problem}\n`)
+		return 2
+	}
+	const wrote = args.write && result.status === 'ready'
+	if (wrote) writeRules(root, result.rulesText)
+	process.stdout.write(formatDecision(parsedDecision.decision, result, wrote))
+	return 0
+}
+
 function main(argv: readonly string[]): Exit {
+	if (argv[0] === 'accept' || argv[0] === 'decline') return settle(argv)
 	if (argv[0] !== 'check' || argv.length > 2) {
-		process.stderr.write(`usage: dstack check [${TABLE_SUFFIX} path]\n`)
+		process.stderr.write(USAGE)
 		return 2
 	}
 	const root = repoRoot()
