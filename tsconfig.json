@@ -13,6 +13,7 @@
   "include": [
     "skills/dstack/scripts/**/*.ts",
     "skills/dstack-init/scripts/**/*.ts",
-    "skills/dstack-verify/scripts/**/*.ts"
+    "skills/dstack-verify/scripts/**/*.ts",
+    "skills/dstack-eval/scripts/**/*.ts"
   ]
 }

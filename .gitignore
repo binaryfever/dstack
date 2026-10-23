@@ -8,3 +8,4 @@ node_modules/
 # FMC-581 intermediate trees (committed package lives under .audit/builds and .audit/proof)
 .audit/runs/
 .audit/prompts/
+.audit/eval/
