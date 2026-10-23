@@ -12,7 +12,7 @@ Node 22 runs the scripts. TypeScript is a dev dependency for `npm test` and `npm
 
 ## Command reference
 
-`check`, `accept`, `decline`, `gate`, and `experience` are subcommands of `skills/dstack/scripts/dstack.ts`. Each subcommand needs a git checkout. Drop the `usage:` prefix when you invoke the script. An unknown subcommand prints the usage block and exits 2. A `check` with extra arguments does the same. Shape errors print `USAGE` and exit 2. Rejected keys print their own stderr (`Decline names an uncovered coordinate.`, `Bad key …`).
+`check`, `accept`, `decline`, `gate`, and `experience` are subcommands of `skills/dstack/scripts/dstack.ts`. Each subcommand needs a git checkout. Drop the `usage:` prefix when you invoke the script. An unknown subcommand prints the usage block and exits 2. A `check` with extra arguments does the same. Shape errors print the usage block and exit 2. Rejected keys print their own stderr (`Decline names an uncovered coordinate.`, `Bad key ...`).
 
 ```text
 node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts
