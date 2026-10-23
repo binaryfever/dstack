@@ -21,12 +21,14 @@ export type LoadedTree = {
 	styles: readonly { path: string; text: string }[]
 	tables: readonly { path: string; text: string }[]
 	dirtyTables: readonly string[]
+	markers: readonly { path: string; text: string }[]
 }
 
 export type Place =
 	| { type: 'slot'; state: UiState; word: string; switchIn: string }
 	| { type: 'part'; inside: string }
 	| { type: 'machine'; switchIn: string }
+	| { type: 'kit' }
 
 export type Claim =
 	| { type: 'component'; id: string; codeName: string; definedIn: string; definedAt: number; place: Place }
@@ -35,7 +37,7 @@ export type Claim =
 
 export type Omission = {
 	symbol: string
-	reason: 'folded-into' | 'helper' | 'uncalled' | 'no-machine' | 'unmapped-word'
+	reason: 'folded-into' | 'helper' | 'uncalled' | 'no-machine' | 'unmapped-word' | 'shadowed'
 	detail: string
 }
 
@@ -69,18 +71,59 @@ export type Decision =
 
 const SOURCE_EXT = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'])
 const RULE_ID = /^[CPT]-[a-z0-9-]+$/
+const DESIGN_PACKAGE_ROOTS = [
+	'packages/ui',
+	'packages/tokens',
+	'packages/components',
+	'packages/design-system',
+] as const
+const MARKER_BASENAMES = new Set(['DESIGN.md', 'design-system.figma.json'])
+
+type ClaimSet = { claims: Claim[]; omissions: Omission[] }
+
+type FigmaSymbols = {
+	readonly path: string
+	readonly components: readonly { readonly name: string }[]
+	readonly patterns: readonly { readonly name: string }[]
+	readonly tokens: readonly { readonly name: string; readonly value: string }[]
+}
+
+type DesignSystemLocation = {
+	readonly roots: readonly string[]
+	readonly figma: FigmaSymbols | null
+}
+
+function isSkippedPath(path: string): boolean {
+	if (
+		path.startsWith('skills/') ||
+		path.startsWith('.audit/') ||
+		path.startsWith('node_modules/') ||
+		path.endsWith('.tmp')
+	) {
+		return true
+	}
+	const base = path.split('/').pop() ?? path
+	if (base.endsWith('.d.ts') || /\.(test|spec)\./.test(base)) return true
+	return false
+}
+
+function inRoot(path: string, root: string): boolean {
+	return path === root || path.startsWith(`${root}/`)
+}
 
 export function partition(paths: readonly string[]): {
 	rules: string | null
 	sources: string[]
 	styles: string[]
 	tables: string[]
+	markers: string[]
 	skipped: string[]
 } {
 	let rules: string | null = null
 	const sources: string[] = []
 	const styles: string[] = []
 	const tables: string[] = []
+	const markers: string[] = []
 	const skipped: string[] = []
 
 	for (const path of paths) {
@@ -88,12 +131,7 @@ export function partition(paths: readonly string[]): {
 			rules = path
 			continue
 		}
-		if (
-			path.startsWith('skills/') ||
-			path.startsWith('.audit/') ||
-			path.startsWith('node_modules/') ||
-			path.endsWith('.tmp')
-		) {
+		if (isSkippedPath(path)) {
 			skipped.push(path)
 			continue
 		}
@@ -102,8 +140,8 @@ export function partition(paths: readonly string[]): {
 			continue
 		}
 		const base = path.split('/').pop() ?? path
-		if (base.endsWith('.d.ts') || /\.(test|spec)\./.test(base)) {
-			skipped.push(path)
+		if (MARKER_BASENAMES.has(base)) {
+			markers.push(path)
 			continue
 		}
 		let isSource = false
@@ -122,7 +160,7 @@ export function partition(paths: readonly string[]): {
 		skipped.push(path)
 	}
 
-	return { rules, sources, styles, tables, skipped }
+	return { rules, sources, styles, tables, markers, skipped }
 }
 
 function stateFor(word: string): UiState | null {
@@ -195,6 +233,7 @@ type ExportRow = {
 	path: string
 	body: string
 	line: number
+	literal: string | null
 }
 
 function listExports(path: string, text: string): ExportRow[] {
@@ -211,18 +250,21 @@ function listExports(path: string, text: string): ExportRow[] {
 				path,
 				body: extractFunctionBody(text, i),
 				line: i + 1,
+				literal: null,
 			})
 			continue
 		}
 		const constExport = line.match(/^export const (\w+)/)
 		if (constExport != null) {
 			const name = constExport[1] ?? ''
+			const literalMatch = line.match(/^export const (\w+) = (['"])([^'"\n]*)\2/)
 			rows.push({
 				name,
 				kind: /^[A-Z]/.test(name) ? 'pascal' : 'camel',
 				path,
 				body: '',
 				line: i + 1,
+				literal: literalMatch?.[3] ?? null,
 			})
 		}
 	}
@@ -393,6 +435,12 @@ function buildInventory(tree: LoadedTree): Inventory {
 		tokens.push(...parseTokens(file.path, file.text))
 	}
 
+	assertUniquePascal(exports)
+
+	return { exports, switches, tokens, vocab, calls: buildCalls(exports, switches) }
+}
+
+function assertUniquePascal(exports: ExportRow[]): void {
 	const exportPaths = new Map<string, string>()
 	for (const row of exports) {
 		if (row.kind !== 'pascal') continue
@@ -402,8 +450,63 @@ function buildInventory(tree: LoadedTree): Inventory {
 		}
 		exportPaths.set(row.name, row.path)
 	}
+}
 
-	return { exports, switches, tokens, vocab, calls: buildCalls(exports, switches) }
+function assertOneValue(
+	tokens: readonly { name: string; value: string }[],
+): void {
+	const tokenValues = new Map<string, string>()
+	for (const token of tokens) {
+		const prev = tokenValues.get(token.name)
+		if (prev != null && prev !== token.value) {
+			throw new Conflict(`two values for ${token.name}`)
+		}
+		tokenValues.set(token.name, token.value)
+	}
+}
+
+function camelPatterns(
+	exports: ExportRow[],
+	calls: Map<string, Set<string>>,
+): { claims: Claim[]; omissions: Omission[] } {
+	const claims: Claim[] = []
+	const omissions: Omission[] = []
+	const camelBodies = new Map<string, Set<string>>()
+	for (const row of exports) {
+		if (row.kind !== 'camel') continue
+		for (const [caller, callees] of calls) {
+			if (!callees.has(row.name)) continue
+			const callerRow = exports.find((e) => e.name === caller)
+			if (callerRow == null || callerRow.kind !== 'pascal') continue
+			let set = camelBodies.get(row.name)
+			if (set == null) {
+				set = new Set()
+				camelBodies.set(row.name, set)
+			}
+			set.add(caller)
+		}
+	}
+
+	for (const row of exports) {
+		if (row.kind !== 'camel') continue
+		const bodies = camelBodies.get(row.name)
+		if (bodies != null && bodies.size >= 2) {
+			const id = patternId(row.name)
+			claims.push({
+				type: 'pattern',
+				id,
+				definedIn: row.path,
+				definedAt: row.line,
+				calledFrom: [...bodies],
+			})
+		} else if (bodies != null && bodies.size === 1) {
+			const caller = [...bodies][0]!
+			omissions.push({ symbol: row.name, reason: 'folded-into', detail: componentId(caller) })
+		} else {
+			omissions.push({ symbol: row.name, reason: 'helper', detail: row.path })
+		}
+	}
+	return { claims, omissions }
 }
 
 class Conflict extends Error {
@@ -412,7 +515,8 @@ class Conflict extends Error {
 	}
 }
 
-function claimsFrom(inventory: Inventory): { claims: Claim[]; omissions: Omission[] } {
+function claimsFrom(inventory: Inventory, options?: { uncalledAsKit?: boolean }): ClaimSet {
+	const uncalledAsKit = options?.uncalledAsKit === true
 	const slotByName = new Map<string, { state: UiState; word: string; switchIn: string; path: string; line: number }>()
 	const omissions: Omission[] = []
 
@@ -532,6 +636,18 @@ function claimsFrom(inventory: Inventory): { claims: Claim[]; omissions: Omissio
 				place: { type: 'part', inside: caller },
 			})
 			componentNames.add(row.name)
+		} else if (uncalledAsKit) {
+			const id = componentId(row.name)
+			if (!RULE_ID.test(id)) throw new Conflict(`bad id ${id}`)
+			claims.push({
+				type: 'component',
+				id,
+				codeName: row.name,
+				definedIn: row.path,
+				definedAt: row.line,
+				place: { type: 'kit' },
+			})
+			componentNames.add(row.name)
 		} else {
 			omissions.push({ symbol: row.name, reason: 'uncalled', detail: row.path })
 		}
@@ -540,49 +656,12 @@ function claimsFrom(inventory: Inventory): { claims: Claim[]; omissions: Omissio
 	const hasMachine = claims.some((c) => c.type === 'component' && c.place.type === 'machine')
 	if (!hasMachine) omissions.push({ symbol: '', reason: 'no-machine', detail: '' })
 
-	const camelBodies = new Map<string, Set<string>>()
-	for (const row of inventory.exports) {
-		if (row.kind !== 'camel') continue
-		for (const [caller, callees] of inventory.calls) {
-			if (!callees.has(row.name)) continue
-			const callerRow = inventory.exports.find((e) => e.name === caller)
-			if (callerRow == null || callerRow.kind !== 'pascal') continue
-			let set = camelBodies.get(row.name)
-			if (set == null) {
-				set = new Set()
-				camelBodies.set(row.name, set)
-			}
-			set.add(caller)
-		}
-	}
+	const camel = camelPatterns(inventory.exports, inventory.calls)
+	claims.push(...camel.claims)
+	omissions.push(...camel.omissions)
 
-	for (const row of inventory.exports) {
-		if (row.kind !== 'camel') continue
-		const bodies = camelBodies.get(row.name)
-		if (bodies != null && bodies.size >= 2) {
-			const id = patternId(row.name)
-			claims.push({
-				type: 'pattern',
-				id,
-				definedIn: row.path,
-				definedAt: row.line,
-				calledFrom: [...bodies],
-			})
-		} else if (bodies != null && bodies.size === 1) {
-			const caller = [...bodies][0]!
-			omissions.push({ symbol: row.name, reason: 'folded-into', detail: componentId(caller) })
-		} else {
-			omissions.push({ symbol: row.name, reason: 'helper', detail: row.path })
-		}
-	}
-
-	const tokenValues = new Map<string, string>()
+	assertOneValue(inventory.tokens)
 	for (const token of inventory.tokens) {
-		const prev = tokenValues.get(token.name)
-		if (prev != null && prev !== token.value) {
-			throw new Conflict(`two values for ${token.name}`)
-		}
-		tokenValues.set(token.name, token.value)
 		const id = tokenId(token.name)
 		if (!RULE_ID.test(id)) throw new Conflict(`bad token id ${id}`)
 		claims.push({
@@ -598,6 +677,409 @@ function claimsFrom(inventory: Inventory): { claims: Claim[]; omissions: Omissio
 	return { claims, omissions }
 }
 
+function shadowDetail(winner: Claim): string {
+	return `${winner.id} ${winner.definedIn}`
+}
+
+function claimSymbol(claim: Claim): string {
+	if (claim.type === 'pattern') return claim.id
+	return claim.codeName
+}
+
+function mergeClaims(base: ClaimSet, preferred: ClaimSet): ClaimSet {
+	if (preferred.claims.length === 0 && preferred.omissions.length === 0) {
+		return { claims: [...base.claims], omissions: [...base.omissions] }
+	}
+
+	const idMap = new Map<string, Claim>()
+	const codeNameMap = new Map<string, Claim>()
+	for (const claim of preferred.claims) {
+		if (idMap.has(claim.id)) throw new Conflict(`duplicate rule ${claim.id}`)
+		idMap.set(claim.id, claim)
+		if (claim.type === 'component' || claim.type === 'token') {
+			if (codeNameMap.has(claim.codeName)) {
+				throw new Conflict(`duplicate code name ${claim.codeName}`)
+			}
+			codeNameMap.set(claim.codeName, claim)
+		}
+	}
+
+	const resolveWinner = (claim: Claim): Claim | null => {
+		const byId = idMap.get(claim.id) ?? null
+		if (claim.type === 'component' || claim.type === 'token') {
+			const byCode = codeNameMap.get(claim.codeName) ?? null
+			if (byId != null && byCode != null && byId !== byCode) {
+				throw new Conflict(`duplicate code name ${claim.codeName}`)
+			}
+			return byId ?? byCode
+		}
+		return byId
+	}
+
+	const claims: Claim[] = []
+	const omissions: Omission[] = []
+
+	for (const claim of base.claims) {
+		const winner = resolveWinner(claim)
+		if (winner != null) {
+			omissions.push({ symbol: claimSymbol(claim), reason: 'shadowed', detail: shadowDetail(winner) })
+			continue
+		}
+		claims.push(claim)
+	}
+
+	for (const omission of base.omissions) {
+		if (omission.reason === 'no-machine' || omission.reason === 'unmapped-word') {
+			omissions.push(omission)
+			continue
+		}
+		let winner: Claim | null = null
+		if (omission.reason === 'uncalled') {
+			winner = codeNameMap.get(omission.symbol) ?? idMap.get(componentId(omission.symbol)) ?? null
+		} else if (omission.reason === 'helper' || omission.reason === 'folded-into') {
+			winner =
+				codeNameMap.get(omission.symbol) ??
+				idMap.get(patternId(omission.symbol)) ??
+				idMap.get(`T-${kebab(omission.symbol)}`) ??
+				null
+		} else if (omission.reason === 'shadowed') {
+			omissions.push(omission)
+			continue
+		}
+		if (winner != null) {
+			omissions.push({
+				symbol: omission.symbol,
+				reason: 'shadowed',
+				detail: shadowDetail(winner),
+			})
+			continue
+		}
+		omissions.push(omission)
+	}
+
+	claims.push(...preferred.claims)
+	omissions.push(...preferred.omissions)
+	return { claims, omissions }
+}
+
+function parseDesignFence(text: string): string[] {
+	if (/```dstack-design-system/.test(text) && !/```dstack-design-system\n[\s\S]*?```/.test(text)) {
+		throw new Conflict('unclosed dstack-design-system fence')
+	}
+	const fenceRe = /```dstack-design-system\n([\s\S]*?)```/g
+	const matches = [...text.matchAll(fenceRe)]
+	if (matches.length === 0) return []
+	if (matches.length > 1) throw new Conflict('multiple dstack-design-system fences')
+	const body = matches[0]?.[1] ?? ''
+	const roots: string[] = []
+	for (const line of body.split('\n')) {
+		const root = line.trim()
+		if (root === '') continue
+		if (root.startsWith('/') || root.includes('..') || root === '.' || root === '') {
+			throw new Conflict('invalid design-system root')
+		}
+		if (isSkippedPath(root) || root.startsWith('node_modules/')) {
+			throw new Conflict('invalid design-system root')
+		}
+		roots.push(root)
+	}
+	return roots
+}
+
+function validateFenceRoots(roots: readonly string[], tree: LoadedTree): void {
+	for (const root of roots) {
+		const hasFile =
+			tree.sources.some((s) => inRoot(s.path, root)) || tree.styles.some((s) => inRoot(s.path, root))
+		if (!hasFile) throw new Conflict('design-system root matches nothing')
+	}
+}
+
+function parseFigmaArtifact(path: string, text: string): FigmaSymbols {
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(text)
+	} catch {
+		throw new Conflict('bad figma artifact')
+	}
+	if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		throw new Conflict('bad figma artifact')
+	}
+	const obj = parsed as Record<string, unknown>
+	if (obj.version !== 1) throw new Conflict('bad figma artifact')
+
+	const readArray = (key: string): unknown[] => {
+		const value = obj[key]
+		if (value === undefined) return []
+		if (!Array.isArray(value)) throw new Conflict('bad figma artifact')
+		return value
+	}
+
+	const components: { name: string }[] = []
+	const seenComponent = new Set<string>()
+	for (const entry of readArray('components')) {
+		if (entry == null || typeof entry !== 'object' || Array.isArray(entry)) {
+			throw new Conflict('bad figma artifact')
+		}
+		const row = entry as Record<string, unknown>
+		if (typeof row.name !== 'string' || !/^[A-Z][A-Za-z0-9]*$/.test(row.name)) {
+			throw new Conflict('bad figma artifact')
+		}
+		if (row.node !== undefined && typeof row.node !== 'string') throw new Conflict('bad figma artifact')
+		if (seenComponent.has(row.name)) throw new Conflict('bad figma artifact')
+		seenComponent.add(row.name)
+		components.push({ name: row.name })
+	}
+
+	const patterns: { name: string }[] = []
+	const seenPattern = new Set<string>()
+	for (const entry of readArray('patterns')) {
+		if (entry == null || typeof entry !== 'object' || Array.isArray(entry)) {
+			throw new Conflict('bad figma artifact')
+		}
+		const row = entry as Record<string, unknown>
+		if (typeof row.name !== 'string' || !/^[a-z][A-Za-z0-9]*$/.test(row.name)) {
+			throw new Conflict('bad figma artifact')
+		}
+		if (seenPattern.has(row.name)) throw new Conflict('bad figma artifact')
+		seenPattern.add(row.name)
+		patterns.push({ name: row.name })
+	}
+
+	const tokens: { name: string; value: string }[] = []
+	const seenToken = new Set<string>()
+	for (const entry of readArray('tokens')) {
+		if (entry == null || typeof entry !== 'object' || Array.isArray(entry)) {
+			throw new Conflict('bad figma artifact')
+		}
+		const row = entry as Record<string, unknown>
+		if (
+			typeof row.name !== 'string' ||
+			!/^--[a-z0-9-]+$/.test(row.name) ||
+			typeof row.value !== 'string' ||
+			row.value === '' ||
+			row.value.includes('\n')
+		) {
+			throw new Conflict('bad figma artifact')
+		}
+		const id = tokenId(row.name)
+		if (!RULE_ID.test(id)) throw new Conflict('bad figma artifact')
+		if (seenToken.has(row.name)) throw new Conflict('bad figma artifact')
+		seenToken.add(row.name)
+		tokens.push({ name: row.name, value: row.value })
+	}
+
+	return { path, components, patterns, tokens }
+}
+
+function locateDesignSystem(tree: LoadedTree): DesignSystemLocation {
+	const roots = new Set<string>()
+	for (const root of DESIGN_PACKAGE_ROOTS) {
+		const hasFile =
+			tree.sources.some((s) => inRoot(s.path, root)) || tree.styles.some((s) => inRoot(s.path, root))
+		if (hasFile) roots.add(root)
+	}
+
+	for (const marker of tree.markers) {
+		if (marker.path.endsWith('DESIGN.md')) {
+			const fenceRoots = parseDesignFence(marker.text)
+			validateFenceRoots(fenceRoots, tree)
+			for (const r of fenceRoots) roots.add(r)
+		}
+	}
+
+	let figma: FigmaSymbols | null = null
+	for (const marker of tree.markers) {
+		if (!marker.path.endsWith('design-system.figma.json')) continue
+		figma = parseFigmaArtifact(marker.path, marker.text)
+	}
+
+	return { roots: [...roots], figma }
+}
+
+function excludeDesignSystemPaths(tree: LoadedTree, roots: readonly string[]): LoadedTree {
+	if (roots.length === 0) return tree
+	const inAnyRoot = (path: string) => roots.some((r) => inRoot(path, r))
+	const sources = tree.sources.filter((s) => !inAnyRoot(s.path))
+	const styles = tree.styles.filter((s) => !inAnyRoot(s.path))
+	if (sources.length === tree.sources.length && styles.length === tree.styles.length) return tree
+	return { ...tree, sources, styles }
+}
+
+function underTokensRoot(filePath: string, roots: readonly string[]): boolean {
+	for (const root of roots) {
+		if (!inRoot(filePath, root)) continue
+		const last = root.split('/').pop() ?? root
+		if (last === 'tokens') return true
+	}
+	return false
+}
+
+function isJsTokenExport(row: ExportRow, roots: readonly string[]): boolean {
+	return (
+		row.kind === 'camel' &&
+		row.literal != null &&
+		underTokensRoot(row.path, roots)
+	)
+}
+
+function jsTokenClaims(rows: ExportRow[]): ClaimSet {
+	const claims: Claim[] = []
+	for (const row of rows) {
+		if (row.literal == null) continue
+		const id = `T-${kebab(row.name)}`
+		if (!RULE_ID.test(id)) throw new Conflict(`bad token id ${id}`)
+		claims.push({
+			type: 'token',
+			id,
+			codeName: row.name,
+			value: row.literal,
+			definedIn: row.path,
+			definedAt: row.line,
+		})
+	}
+	return { claims, omissions: [] }
+}
+
+function cssTokenClaims(
+	styles: readonly { path: string; text: string }[],
+): ClaimSet {
+	const parsed: { name: string; value: string; path: string; line: number }[] = []
+	for (const file of styles) {
+		parsed.push(...parseTokens(file.path, file.text))
+	}
+	assertOneValue(parsed)
+	const seen = new Set<string>()
+	const claims: Claim[] = []
+	for (const token of parsed) {
+		if (seen.has(token.name)) continue
+		seen.add(token.name)
+		const id = tokenId(token.name)
+		if (!RULE_ID.test(id)) throw new Conflict(`bad token id ${id}`)
+		claims.push({
+			type: 'token',
+			id,
+			codeName: token.name,
+			value: token.value,
+			definedIn: token.path,
+			definedAt: token.line,
+		})
+	}
+	return { claims, omissions: [] }
+}
+
+function assertTokenClaimAgreement(a: ClaimSet, b: ClaimSet): void {
+	const byId = new Map<string, Claim>()
+	for (const claim of [...a.claims, ...b.claims]) {
+		if (claim.type !== 'token') continue
+		const prev = byId.get(claim.id)
+		if (prev != null && prev.type === 'token' && prev.value !== claim.value) {
+			throw new Conflict(`two values for ${claim.codeName}`)
+		}
+		byId.set(claim.id, claim)
+	}
+}
+
+function figmaClaimSet(figma: FigmaSymbols | null): ClaimSet {
+	if (figma == null) return { claims: [], omissions: [] }
+	const claims: Claim[] = []
+	let index = 0
+	const bump = () => {
+		index++
+		return index
+	}
+	for (const row of figma.components) {
+		const id = componentId(row.name)
+		if (!RULE_ID.test(id)) throw new Conflict(`bad id ${id}`)
+		claims.push({
+			type: 'component',
+			id,
+			codeName: row.name,
+			definedIn: figma.path,
+			definedAt: bump(),
+			place: { type: 'kit' },
+		})
+	}
+	for (const row of figma.patterns) {
+		const id = patternId(row.name)
+		claims.push({
+			type: 'pattern',
+			id,
+			definedIn: figma.path,
+			definedAt: bump(),
+			calledFrom: [],
+		})
+	}
+	for (const row of figma.tokens) {
+		const id = tokenId(row.name)
+		claims.push({
+			type: 'token',
+			id,
+			codeName: row.name,
+			value: row.value,
+			definedIn: figma.path,
+			definedAt: bump(),
+		})
+	}
+	return { claims, omissions: [] }
+}
+
+function buildKitInventory(tree: LoadedTree, codeExports: ExportRow[]): Inventory {
+	const switches: SwitchHost[] = []
+	const vocab: { word: string; state: UiState }[] = []
+	const sourcesByPath = new Map(tree.sources.map((s) => [s.path, s]))
+	const paths = new Set(codeExports.map((e) => e.path))
+	for (const path of paths) {
+		const file = sourcesByPath.get(path)
+		if (file == null) continue
+		const exportNames = new Set(codeExports.filter((e) => e.path === path).map((e) => e.name))
+		switches.push(...parseSwitchHosts(path, file.text, exportNames))
+		vocab.push(...parseVocab(path, file.text))
+	}
+
+	assertUniquePascal(codeExports)
+	return {
+		exports: codeExports,
+		switches,
+		tokens: [],
+		vocab,
+		calls: buildCalls(codeExports, switches),
+	}
+}
+
+function claimsFromDesignSystem(tree: LoadedTree, located: DesignSystemLocation): ClaimSet {
+	if (located.roots.length === 0 && located.figma == null) {
+		return { claims: [], omissions: [] }
+	}
+
+	const roots = located.roots
+	const kitSources = tree.sources.filter((s) => roots.some((r) => inRoot(s.path, r)))
+	const kitStyles = tree.styles.filter((s) => roots.some((r) => inRoot(s.path, r)))
+
+	const allExports: ExportRow[] = []
+	for (const file of kitSources) {
+		allExports.push(...listExports(file.path, file.text))
+	}
+
+	const tokenRows = allExports.filter((row) => isJsTokenExport(row, roots))
+	const tokenRowSet = new Set(tokenRows)
+	const codeExports = allExports.filter((row) => !tokenRowSet.has(row))
+
+	const inventory = buildKitInventory(tree, codeExports)
+	const codeSet = claimsFrom(inventory, { uncalledAsKit: true })
+
+	const jsTokens = jsTokenClaims(tokenRows)
+	const cssTokens = cssTokenClaims(kitStyles)
+	assertTokenClaimAgreement(jsTokens, cssTokens)
+	const mergedTokens = mergeClaims(jsTokens, cssTokens)
+
+	const packageClaims: ClaimSet = {
+		claims: [...codeSet.claims, ...mergedTokens.claims],
+		omissions: codeSet.omissions,
+	}
+
+	return mergeClaims(figmaClaimSet(located.figma), packageClaims)
+}
+
 function render(claims: readonly Claim[]): string {
 	const components = claims.filter((c): c is Claim & { type: 'component' } => c.type === 'component')
 	const patterns = claims.filter((c): c is Claim & { type: 'pattern' } => c.type === 'pattern')
@@ -608,15 +1090,15 @@ function render(claims: readonly Claim[]): string {
 	const slots = UI_STATES.flatMap((state) =>
 		components.filter((c) => c.place.type === 'slot' && c.place.state === state),
 	)
-	const parts = components
-		.filter((c) => c.place.type === 'part')
+	const partsAndKit = components
+		.filter((c) => c.place.type === 'part' || c.place.type === 'kit')
 		.sort((a, b) => a.codeName.localeCompare(b.codeName))
 	const machines = components
 		.filter((c) => c.place.type === 'machine')
 		.sort((a, b) => a.codeName.localeCompare(b.codeName))
 
 	const componentBlock: string[] = []
-	for (const c of [...slots, ...parts, ...machines]) {
+	for (const c of [...slots, ...partsAndKit, ...machines]) {
 		componentBlock.push(`### ${c.id} \`${c.codeName}\``)
 		componentBlock.push(`Seen in ${c.definedIn}.`)
 		componentBlock.push('')
@@ -705,9 +1187,17 @@ export function derive(tree: LoadedTree): DeriveResult {
 		}
 	}
 
+	let located: DesignSystemLocation
+	let productTree: LoadedTree
 	let inventory: Inventory
+	let merged: ClaimSet
 	try {
-		inventory = buildInventory(tree)
+		located = locateDesignSystem(tree)
+		productTree = excludeDesignSystemPaths(tree, located.roots)
+		inventory = buildInventory(productTree)
+		const product = claimsFrom(inventory)
+		const designSystem = claimsFromDesignSystem(tree, located)
+		merged = mergeClaims(product, designSystem)
 	} catch (error) {
 		if (error instanceof Conflict) {
 			return { type: 'refuse', reason: 'catalog-conflict', detail: error.message }
@@ -715,18 +1205,8 @@ export function derive(tree: LoadedTree): DeriveResult {
 		throw error
 	}
 
-	let claims: Claim[]
-	let omissions: Omission[]
-	try {
-		const built = claimsFrom(inventory)
-		claims = built.claims
-		omissions = built.omissions
-	} catch (error) {
-		if (error instanceof Conflict) {
-			return { type: 'refuse', reason: 'catalog-conflict', detail: error.message }
-		}
-		throw error
-	}
+	const claims = merged.claims
+	const omissions = merged.omissions
 
 	const rendered = render(claims)
 	const parsed = parseRules(rendered)
@@ -846,6 +1326,8 @@ export function formatShow(proposal: Proposal): string {
 			lines.push(
 				`machine  ${claim.codeName}  ${claim.id}  ${claim.definedIn}:${claim.definedAt}  switch ${claim.place.switchIn}`,
 			)
+		} else if (claim.type === 'component' && claim.place.type === 'kit') {
+			lines.push(`kit  ${claim.codeName}  ${claim.id}  ${claim.definedIn}:${claim.definedAt}`)
 		} else if (claim.type === 'pattern') {
 			lines.push(`pattern  ${claim.id}  ${claim.definedIn}:${claim.definedAt}`)
 		} else if (claim.type === 'token') {
