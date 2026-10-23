@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # dstack-init
 
-The script derives the catalog from this repo. Do not hash the file yourself, do not type `###` headings, and do not fix past what the script prints.
+The script derives the catalog from this repo. Do not hash the file yourself, do not type `###` headings, and do not fix past what the script prints. When the scan finds a design-system package (`packages/ui`, tokens, components, `design-system`, a `dstack-design-system` fence in `DESIGN.md`, or `design-system.figma.json`), those symbols merge into the same show output and digest as product code.
 
 ## Run
 

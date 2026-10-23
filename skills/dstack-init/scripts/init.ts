@@ -71,7 +71,11 @@ export function loadTree(root: string): LoadedTree {
 	const changed = changedPaths(root)
 	const dirtyTables = [...changed].filter((path) => path.endsWith(TABLE_SUFFIX))
 
-	return { rules, sources, styles, tables, dirtyTables }
+	const markers = parts.markers
+		.filter((path) => existsSync(join(root, path)))
+		.map((path) => ({ path, text: read(path) }))
+
+	return { rules, sources, styles, tables, dirtyTables, markers }
 }
 
 function writeRules(root: string, rendered: string): void {

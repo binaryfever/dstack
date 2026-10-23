@@ -44,6 +44,7 @@ export function renderBoard(status) {
 		styles: [],
 		tables: [],
 		dirtyTables: [],
+		markers: [],
 	}
 	const result = derive(tree)
 	assert.equal(result.type, 'ready')
@@ -71,6 +72,7 @@ export function renderBoard(status) {
 		styles: [],
 		tables: [],
 		dirtyTables: [],
+		markers: [],
 	}
 	const result = derive(tree)
 	assert.equal(result.type, 'refuse')
@@ -123,4 +125,158 @@ test('live tree stays an empty catalog with no notification screen', () => {
 	assert.doesNotMatch(first.proposal.rendered, /unread/i)
 	const names = first.proposal.claims.filter((c) => c.type === 'component').map((c) => c.codeName)
 	assert.deepEqual(names, [])
+})
+
+test('partition puts DESIGN.md in markers and audit DESIGN.md in skipped', () => {
+	const paths = ['DESIGN.md', '.audit/builds/willow/DESIGN.md', 'design-system.figma.json']
+	const parts = partition(paths)
+	assert.deepEqual(parts.markers, ['DESIGN.md', 'design-system.figma.json'])
+	assert.ok(parts.skipped.some((p) => p.includes('.audit/') && p.endsWith('DESIGN.md')))
+})
+
+test('prose DESIGN.md without fence adds no design-system claims', () => {
+	const tree: LoadedTree = {
+		rules: null,
+		sources: [{ path: 'src/App.tsx', text: 'export function App() {}\n' }],
+		styles: [],
+		tables: [],
+		dirtyTables: [],
+		markers: [
+			{
+				path: 'DESIGN.md',
+				text: '# Acme\n\n### C-fake `Fake`\n\nNot a catalog.\n',
+			},
+		],
+	}
+	const baseline: LoadedTree = { ...tree, markers: [] }
+	const base = derive(baseline)
+	const withMarker = derive(tree)
+	assert.equal(base.type, 'ready')
+	assert.equal(withMarker.type, 'ready')
+	if (base.type !== 'ready' || withMarker.type !== 'ready') return
+	assert.equal(base.proposal.digest, withMarker.proposal.digest)
+})
+
+test('packages/ui uncalled export becomes kit claim', () => {
+	const tree: LoadedTree = {
+		rules: null,
+		sources: [{ path: 'packages/ui/AsyncList.tsx', text: 'export function AsyncList() { return null }\n' }],
+		styles: [],
+		tables: [],
+		dirtyTables: [],
+		markers: [],
+	}
+	const result = derive(tree)
+	assert.equal(result.type, 'ready')
+	if (result.type !== 'ready') return
+	const kit = result.proposal.claims.find(
+		(c) => c.type === 'component' && c.place.type === 'kit' && c.codeName === 'AsyncList',
+	)
+	assert.ok(kit)
+	assert.equal(kit?.id, 'C-async-list')
+	assert.ok(result.proposal.rendered.includes('packages/ui/AsyncList.tsx'))
+})
+
+test('kit wins over product on name collision with shadowed omission', () => {
+	const tree: LoadedTree = {
+		rules: null,
+		sources: [
+			{
+				path: 'src/list/List.tsx',
+				text: 'export function Row() {}\nexport function AsyncList() { return Row() }\n',
+			},
+			{ path: 'packages/ui/AsyncList.tsx', text: 'export function AsyncList() { return null }\n' },
+		],
+		styles: [],
+		tables: [],
+		dirtyTables: [],
+		markers: [],
+	}
+	const result = derive(tree)
+	assert.equal(result.type, 'ready')
+	if (result.type !== 'ready') return
+	const asyncClaims = result.proposal.claims.filter(
+		(c) => c.type === 'component' && c.codeName === 'AsyncList',
+	)
+	assert.equal(asyncClaims.length, 1)
+	assert.equal(asyncClaims[0]?.definedIn, 'packages/ui/AsyncList.tsx')
+	assert.ok(
+		result.proposal.omissions.some(
+			(o) => o.reason === 'shadowed' && o.symbol === 'AsyncList' && o.detail.includes('C-async-list'),
+		),
+	)
+	assert.ok(result.proposal.rendered.includes('Seen in packages/ui/AsyncList.tsx'))
+})
+
+test('packages/tokens css emits token with custom property code name', () => {
+	const tree: LoadedTree = {
+		rules: null,
+		sources: [],
+		styles: [{ path: 'packages/tokens/tokens.css', text: ':root { --color-primary: #1A73E8; }\n' }],
+		tables: [],
+		dirtyTables: [],
+		markers: [],
+	}
+	const result = derive(tree)
+	assert.equal(result.type, 'ready')
+	if (result.type !== 'ready') return
+	const token = result.proposal.claims.find((c): c is Extract<typeof c, { type: 'token' }> => c.type === 'token' && c.id === 'T-color-primary')
+	assert.ok(token)
+	assert.equal(token.codeName, '--color-primary')
+})
+
+test('bad figma artifact refuses', () => {
+	const tree: LoadedTree = {
+		rules: null,
+		sources: [],
+		styles: [],
+		tables: [],
+		dirtyTables: [],
+		markers: [{ path: 'design-system.figma.json', text: '{}' }],
+	}
+	const result = derive(tree)
+	assert.equal(result.type, 'refuse')
+	if (result.type === 'refuse') assert.match(result.detail, /figma/i)
+})
+
+test('fence root enables design-system scan', () => {
+	const tree: LoadedTree = {
+		rules: null,
+		sources: [{ path: 'packages/shop-ui/Button.tsx', text: 'export function Button() {}\n' }],
+		styles: [],
+		tables: [],
+		dirtyTables: [],
+		markers: [
+			{
+				path: 'DESIGN.md',
+				text: '```dstack-design-system\npackages/shop-ui\n```\n',
+			},
+		],
+	}
+	const result = derive(tree)
+	assert.equal(result.type, 'ready')
+	if (result.type !== 'ready') return
+	assert.ok(result.proposal.claims.some((c) => c.type === 'component' && c.codeName === 'Button'))
+})
+
+test('disagreeing token values in kit css refuses', () => {
+	const tree: LoadedTree = {
+		rules: null,
+		sources: [],
+		styles: [
+			{
+				path: 'packages/tokens/a.css',
+				text: ':root { --color-primary: #111; }\n',
+			},
+			{
+				path: 'packages/tokens/b.css',
+				text: ':root { --color-primary: #222; }\n',
+			},
+		],
+		tables: [],
+		dirtyTables: [],
+		markers: [],
+	}
+	const result = derive(tree)
+	assert.equal(result.type, 'refuse')
 })
