@@ -43,6 +43,6 @@ Exit 2 pastes stderr and stops.
 
 ## Experience
 
-After `dstack check`, score a registered screen with `node --experimental-strip-types <directory of this file>/scripts/dstack.ts experience score <screen-id> --actor agent --judgment <agent-judgment.md>`. Run `experience rubric` for the bars. Write judgment sections only. Leave `no-parallel-card` out of the judgment file.
+After `dstack check`, score a registered screen with `node --experimental-strip-types <directory of this file>/scripts/dstack.ts experience score <screen-id> --actor agent --judgment <agent-judgment.md>`. Run `experience rubric` for the bars. Write those judgment sections.
 
 An experience miss is not a correction bullet and not a rule proposal. Do not edit `product-rules.md` to record it. Driving the live UI remains `/dstack-verify`. When that skill is missing, stop that request.

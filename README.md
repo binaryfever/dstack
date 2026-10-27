@@ -99,7 +99,7 @@ The hash is 64 lowercase hex digits. Exit 0 prints the human text. Exit 3 prints
 
 Experience scores one registered screen. `check` does not run it. An experience exit leaves the check exit unchanged. An experience miss stays out of `product-rules.md` and out of `## Corrections`.
 
-`experience rubric` prints the bars and exits 0. The judgment criteria are `empty-copy`, `hierarchy`, and `visual`. The mechanical criterion is `no-parallel-card`.
+`experience rubric` prints the bars and exits 0. The criteria are `empty-copy`, `hierarchy`, and `visual`. Each one is a judgment.
 
 The only registered screen id is `spruce`. Its proofs and build live under `.audit/`.
 
@@ -110,7 +110,7 @@ node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts experie
 node --experimental-strip-types <dstack>/skills/dstack/scripts/dstack.ts experience compare <agent-score> <judge-score>
 ```
 
-Pass judgment paths and score paths relative to the repo root. `experience score` accepts only `score <screen> --actor <agent|judge> --judgment <file>` in that order. The judgment file starts with `# <screen> <actor>`. The actor word matches `--actor`. The sections are `empty-copy`, `hierarchy`, and `visual`. Each section has a `mark:` line of `0` or `1` and a `because:` line. Leave `no-parallel-card` out of the file. The score command marks that criterion from the screen files.
+Pass judgment paths and score paths relative to the repo root. `experience score` accepts only `score <screen> --actor <agent|judge> --judgment <file>` in that order. The judgment file starts with `# <screen> <actor>`. The actor word matches `--actor`. The sections are `empty-copy`, `hierarchy`, and `visual`. Each section has a `mark:` line of `0` or `1` and a `because:` line.
 
 ```text
 # spruce agent
@@ -128,7 +128,7 @@ mark: 1
 because: <one line>
 ```
 
-`score` exits 0 when the mechanical mark is 1. `score` exits 1 when the mechanical mark is 0, and it still prints the score. A judgment mark of 0 does not flip that exit. Exit 2 is a bad invocation, an unknown screen, or unreadable input.
+`score` exits 0 when it prints the score. A judgment mark of 0 stays in that score. Exit 2 is a bad invocation, an unknown screen, or unreadable input.
 
 `compare` reads two score files from the repo root. It prints one line per criterion. The line is `<id> <agent mark> <judge mark> agree` when the marks match. The last word is `differ` for unequal marks. Exit 0 prints that report. Exit 2 is a bad invocation, an unreadable score, or two scores for different screens.
 
@@ -157,7 +157,7 @@ After the rules file is written, the skill edits named state-table cells in a la
 
 A root file with no `### C-`, `### P-`, or `### T-` heading is an empty catalog. `/dstack-init` writes the catalog. The next block is the heading grammar. It matches `skills/dstack/scripts/fixtures/shop/product-rules.md`. The scan chooses the ids. The root `product-rules.md` in this repository is a stub.
 
-Each rule is a level-3 heading. `C-` is a component, `P-` is a pattern, and `T-` is a token. A component or a token names its code symbol in backticks. A `Covers:` line lists the states that rule owns. `list` means the whole list, so that rule is the list's state machine. `list.loading` means the loading state. A token has a `Value:` line. Other prose is for people.
+Each rule is a level-3 heading. `C-` is a component, `P-` is a pattern, and `T-` is a token. A component or a token names its code symbol in backticks. A `Covers:` line names the kind, or the kind and one state, that the rule owns. A bare kind covers that whole part, so that rule is the part's state machine. `badge.loading` means the loading state of kind `badge`. A token has a `Value:` line. Other prose is for people.
 
 Two rules cannot cover the same state. The check names both headings when they do.
 

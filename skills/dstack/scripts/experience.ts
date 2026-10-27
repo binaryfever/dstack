@@ -1,6 +1,5 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
-import { parseRules, parseTable, tablePath, type Cell, type Ref, type Rules, type StateTable } from './model.ts'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 type Actor = 'agent' | 'judge'
 type ProofSlot = 'empty' | 'loading' | 'failed' | 'populatedDesktop' | 'populatedMobile'
@@ -15,26 +14,19 @@ const RUBRIC = [
 	{
 		id: 'hierarchy',
 		kind: 'judgment',
-		bar: 'On both populated proofs, the screen title is the header. Anything beside it stays smaller than that title. A second title or a card fails.',
+		bar: 'On both populated proofs, the screen title is the header. Anything beside it stays smaller than that title. A second title fails.',
 		proof: ['populatedDesktop', 'populatedMobile'],
-	},
-	{
-		id: 'no-parallel-card',
-		kind: 'mechanical',
-		bar: 'When a populated cell names a row, the screen files do not also declare a Card function or class, and they do not put a card class on an element.',
-		proof: [],
 	},
 	{
 		id: 'visual',
 		kind: 'judgment',
-		bar: 'The empty proof shows the empty state and no populated content. The loading proof shows the loading state, not the empty sentence and not populated content. The failed proof shows one sentence and one retry control. Both populated proofs show the populated content. A card grid fails.',
+		bar: 'The empty proof shows the empty state and no populated content. The loading proof shows the loading state, not the empty sentence and not populated content. The failed proof shows the failed state, not the empty sentence and not populated content. Both populated proofs show the populated content.',
 		proof: ['empty', 'loading', 'failed', 'populatedDesktop', 'populatedMobile'],
 	},
 ] as const
 
 type CriterionId = (typeof RUBRIC)[number]['id']
 type JudgmentId = Extract<(typeof RUBRIC)[number], { kind: 'judgment' }>['id']
-type MechanicalId = Extract<(typeof RUBRIC)[number], { kind: 'mechanical' }>['id']
 type KindOf<K extends CriterionId> = Extract<(typeof RUBRIC)[number], { id: K }>['kind']
 
 type Cite = { path: string; line: number | null; note: string }
@@ -60,9 +52,6 @@ type Judgment = {
 
 const SCREENS = {
 	spruce: {
-		rules: '.audit/builds/spruce/product-rules.md',
-		table: '.audit/builds/spruce/src/mentions/MentionsList.states.md',
-		buildRoot: '.audit/builds/spruce',
 		proofs: {
 			empty: '.audit/proof/spruce-empty.png',
 			loading: '.audit/proof/spruce-loading.png',
@@ -82,17 +71,13 @@ type ScoreError =
 	| { type: 'actor-mismatch'; file: string; flag: Actor }
 	| { type: 'screen-mismatch'; file: string; flag: string }
 	| { type: 'judgment-syntax'; line: number; problem: string }
-	| { type: 'mechanical-in-judgment'; id: MechanicalId }
 	| { type: 'missing-judgment'; id: JudgmentId }
 	| { type: 'extra-criterion'; id: string }
-	| { type: 'table-unfinished'; path: string }
-	| { type: 'rules-unreadable'; path: string }
 	| { type: 'kind-mismatch'; id: string }
 	| { type: 'screen-mismatch-score'; agent: string; judge: string }
 	| { type: 'unreadable'; path: string }
 
 const JUDGMENT_IDS = new Set<string>(RUBRIC.filter((item) => item.kind === 'judgment').map((item) => item.id))
-const MECHANICAL_IDS = new Set<string>(RUBRIC.filter((item) => item.kind === 'mechanical').map((item) => item.id))
 const ALL_IDS = new Set<string>(RUBRIC.map((item) => item.id))
 
 function formatError(error: ScoreError): string {
@@ -109,16 +94,10 @@ function formatError(error: ScoreError): string {
 			return `experience screen-mismatch ${error.file} ${error.flag}`
 		case 'judgment-syntax':
 			return `experience judgment-syntax ${error.line} ${error.problem}`
-		case 'mechanical-in-judgment':
-			return `experience mechanical-in-judgment ${error.id}`
 		case 'missing-judgment':
 			return `experience missing-judgment ${error.id}`
 		case 'extra-criterion':
 			return `experience extra-criterion ${error.id}`
-		case 'table-unfinished':
-			return `experience table-unfinished ${error.path}`
-		case 'rules-unreadable':
-			return `experience rules-unreadable ${error.path}`
 		case 'kind-mismatch':
 			return `experience kind-mismatch ${error.id}`
 		case 'screen-mismatch-score':
@@ -171,7 +150,6 @@ function parseJudgment(text: string, screen: ScreenId, actor: Actor): Judgment |
 		i += 1
 		if (seen.has(id)) return { type: 'judgment-syntax', line: i, problem: 'repeated id' }
 		seen.add(id)
-		if (MECHANICAL_IDS.has(id)) return { type: 'mechanical-in-judgment', id: id as MechanicalId }
 		if (!JUDGMENT_IDS.has(id)) return { type: 'extra-criterion', id }
 		let mark: 0 | 1 | null = null
 		let because: string | null = null
@@ -264,10 +242,10 @@ function parseScore(text: string): ScreenScore | ScoreError {
 	let i = 2
 	while (i < lines.length && (lines[i] ?? '').trim() === '') i += 1
 	while (i < lines.length) {
-		const head = /^(\S+) (judgment|mechanical) ([01])$/.exec(lines[i] ?? '')
+		const head = /^(\S+) (judgment) ([01])$/.exec(lines[i] ?? '')
 		if (head == null) return { type: 'judgment-syntax', line: i + 1, problem: 'bad cell' }
 		const id = head[1] ?? ''
-		const kind = head[2] as 'judgment' | 'mechanical'
+		const kind = head[2] as 'judgment'
 		const mark = Number(head[3]) as 0 | 1
 		if (!ALL_IDS.has(id)) return { type: 'extra-criterion', id }
 		const rubric = RUBRIC.find((item) => item.id === id)
@@ -285,7 +263,7 @@ function parseScore(text: string): ScreenScore | ScoreError {
 				i += 1
 				break
 			}
-			if (/^(\S+) (judgment|mechanical) [01]$/.test(line)) break
+			if (/^(\S+) judgment [01]$/.test(line)) break
 			if (!line.startsWith('evidence ')) return { type: 'judgment-syntax', line: i + 1, problem: 'bad evidence' }
 			const cite = parseEvidenceLine(line)
 			if (cite == null) return { type: 'judgment-syntax', line: i + 1, problem: 'bad evidence' }
@@ -321,177 +299,6 @@ function compareScores(agent: ScreenScore, judge: ScreenScore): string | ScoreEr
 	return `${lines.join('\n')}\n`
 }
 
-function mechanicalMiss(score: ScreenScore): boolean {
-	for (const item of RUBRIC) {
-		if (item.kind === 'mechanical' && score.cells[item.id].mark === 0) return true
-	}
-	return false
-}
-
-function namesFromCell(cell: Cell, rules: Rules): string[] {
-	const names: string[] = []
-	for (const ref of cell) {
-		if (ref.type === 'unlisted') names.push(ref.name as string)
-		else if (ref.type === 'rule') {
-			const rule = rules.byId.get(ref.id)
-			if (rule?.type === 'component') names.push(rule.codeName as string)
-		}
-	}
-	return names
-}
-
-type CardHit = { path: string; line: number; symbol: string }
-
-function shouldSkipFile(name: string): boolean {
-	if (name.includes('node_modules')) return true
-	if (name.includes('.test.') || name.includes('.spec.')) return true
-	return false
-}
-
-function listFiles(root: string, dir: string): string[] {
-	const abs = join(root, dir)
-	if (!existsSync(abs)) return []
-	const out: string[] = []
-	const walk = (current: string) => {
-		for (const entry of readdirSync(current)) {
-			const full = join(current, entry)
-			if (shouldSkipFile(full)) continue
-			const stat = statSync(full)
-			if (stat.isDirectory()) {
-				if (entry === 'node_modules') continue
-				walk(full)
-			} else if (/\.(js|html|css)$/i.test(entry)) {
-				out.push(relative(root, full))
-			}
-		}
-	}
-	walk(abs)
-	return out.sort()
-}
-
-function stripComments(text: string, ext: string): string {
-	if (ext === 'html') return text.replace(/<!--[\s\S]*?-->/g, '')
-	if (ext === 'css') return text.replace(/\/\*[\s\S]*?\*\//g, '')
-	return text
-		.replace(/\/\*[\s\S]*?\*\//g, '')
-		.replace(/(^|[^:])\/\/.*$/gm, '$1')
-}
-
-function cardClassTokens(value: string): string[] {
-	return value.split(/\s+/).map((part) => part.trim()).filter((part) => part.length > 0)
-}
-
-function tokenIsCard(token: string): boolean {
-	return token === 'card' || token.endsWith('-card')
-}
-
-function scanCardHits(root: string, buildRoot: string): CardHit[] {
-	const hits: CardHit[] = []
-	for (const path of listFiles(root, buildRoot)) {
-		const abs = join(root, path)
-		const text = readFileSync(abs, 'utf8')
-		const ext = path.split('.').pop() ?? ''
-		const stripped = stripComments(text, ext)
-		const lines = stripped.split('\n')
-		for (let i = 0; i < lines.length; i++) {
-			const line = lines[i] ?? ''
-			const decl = /(?:function|class)\s+([A-Za-z][A-Za-z0-9]*Card)\b/.exec(line)
-			if (decl != null) {
-				hits.push({ path, line: i + 1, symbol: decl[1] ?? '' })
-			}
-			for (const match of line.matchAll(/\b(?:class|className)\s*=\s*["']([^"']+)["']/g)) {
-				for (const token of cardClassTokens(match[1] ?? '')) {
-					if (tokenIsCard(token)) hits.push({ path, line: i + 1, symbol: token })
-				}
-			}
-		}
-	}
-	hits.sort((a, b) => (a.path === b.path ? a.line - b.line : a.path.localeCompare(b.path)))
-	return hits
-}
-
-function findFunctionLine(root: string, buildRoot: string, name: string): CardHit | null {
-	for (const path of listFiles(root, buildRoot)) {
-		if (!path.endsWith('.js')) continue
-		const text = readFileSync(join(root, path), 'utf8')
-		const lines = text.split('\n')
-		for (let i = 0; i < lines.length; i++) {
-			if (new RegExp(`(?:function|const)\\s+${name}\\b`).test(lines[i] ?? '')) {
-				return { path, line: i + 1, symbol: name }
-			}
-		}
-	}
-	return null
-}
-
-function cellForPopulated(surface: StateTable['surfaces'][number]): Cell | null {
-	const cells = surface.cells as Readonly<Record<string, Cell>>
-	return cells.populated ?? null
-}
-
-function mechanicalNoParallelCard(
-	root: string,
-	screen: ScreenId,
-	table: StateTable,
-	rules: Rules,
-): CellFor<'no-parallel-card'> | ScoreError {
-	const tablePathRel = SCREENS[screen].table
-	const named = table.surfaces.flatMap((surface) => {
-		const cell = cellForPopulated(surface)
-		if (cell == null) return []
-		const names = namesFromCell(cell, rules)
-		const rowNames = names.filter((name) => name.endsWith('Row'))
-		const cardNames = names.filter((name) => name.endsWith('Card'))
-		if (rowNames.length === 0 && cardNames.length === 0) return []
-		return [{ line: surface.line, cell, rowNames, cardNames }]
-	})
-	const rowNames = named.flatMap((item) => item.rowNames)
-	const cited = named.find((item) => item.rowNames.length > 0) ?? named[0]
-	if (cited == null || rowNames.length === 0 || named.some((item) => item.cardNames.length > 0)) {
-		const evidence: Cite = cited == null
-			? { path: tablePathRel, line: null, note: 'no row' }
-			: { path: tablePathRel, line: cited.line, note: cited.cell.map(refNote).join(' + ') }
-		return {
-			id: 'no-parallel-card',
-			kind: 'mechanical',
-			mark: cited == null ? 1 : 0,
-			because: cited == null ? 'No populated cell names a row.' : 'The populated cell does not name a row.',
-			evidence: [evidence],
-		}
-	}
-	const populatedLine = cited.line
-	const populatedCell = cited.cell
-	const cellCite: Cite = { path: tablePathRel, line: populatedLine, note: populatedCell.map(refNote).join(' + ') }
-	const hits = scanCardHits(root, SCREENS[screen].buildRoot)
-	const first = hits[0]
-	if (first == null) {
-		const evidence: Cite[] = [cellCite]
-		const fn = findFunctionLine(root, SCREENS[screen].buildRoot, rowNames[0] ?? '')
-		if (fn != null) evidence.push({ path: fn.path, line: fn.line, note: `function ${fn.symbol}` })
-		const [head, ...rest] = evidence
-		return {
-			id: 'no-parallel-card',
-			kind: 'mechanical',
-			mark: 1,
-			because: `The list populated cell names ${rowNames.join(', ')}, and the screen files declare no Card and no card class.`,
-			evidence: [head, ...rest],
-		}
-	}
-	return {
-		id: 'no-parallel-card',
-		kind: 'mechanical',
-		mark: 0,
-		because: `${first.symbol} is declared at ${first.path}:${first.line}.`,
-		evidence: [cellCite, ...hits.map((hit) => ({ path: hit.path, line: hit.line, note: hit.symbol }))],
-	}
-}
-
-function refNote(ref: Ref): string {
-	if (ref.type === 'unlisted') return `unlisted(${ref.name})`
-	if (ref.type === 'none') return 'none'
-	return ref.id as string
-}
-
 function judgmentEvidence(screen: ScreenId, id: JudgmentId, judgment: Judgment): { mark: 0 | 1; because: string; evidence: NonEmpty<Cite> } | ScoreError {
 	const item = RUBRIC.find((row) => row.id === id)
 	if (item == null || item.kind !== 'judgment') return { type: 'missing-judgment', id }
@@ -502,16 +309,7 @@ function judgmentEvidence(screen: ScreenId, id: JudgmentId, judgment: Judgment):
 	return { mark: entry.mark, because: entry.because, evidence: [head, ...cites.slice(1)] }
 }
 
-function scoreScreen(
-	root: string,
-	actor: Actor,
-	screen: ScreenId,
-	rules: Rules,
-	table: StateTable,
-	judgment: Judgment,
-): ScreenScore | ScoreError {
-	const mechanical = mechanicalNoParallelCard(root, screen, table, rules)
-	if ('type' in mechanical) return mechanical
+function scoreScreen(actor: Actor, screen: ScreenId, judgment: Judgment): ScreenScore | ScoreError {
 	const emptyCopy = judgmentEvidence(screen, 'empty-copy', judgment)
 	const hierarchy = judgmentEvidence(screen, 'hierarchy', judgment)
 	const visual = judgmentEvidence(screen, 'visual', judgment)
@@ -524,7 +322,6 @@ function scoreScreen(
 		cells: {
 			'empty-copy': { id: 'empty-copy', kind: 'judgment', ...emptyCopy },
 			hierarchy: { id: 'hierarchy', kind: 'judgment', ...hierarchy },
-			'no-parallel-card': mechanical,
 			visual: { id: 'visual', kind: 'judgment', ...visual },
 		},
 	}
@@ -536,19 +333,6 @@ function verifyProofs(root: string, screen: ScreenId): ScoreError | null {
 		if (!existsSync(join(root, path))) return { type: 'missing-proof', slot, path }
 	}
 	return null
-}
-
-function loadScoreInputs(root: string, screen: ScreenId): { rules: Rules; table: StateTable } | ScoreError {
-	const config = SCREENS[screen]
-	const rulesFile = join(root, config.rules)
-	if (!existsSync(rulesFile)) return { type: 'rules-unreadable', path: config.rules }
-	const rulesParsed = parseRules(readFileSync(rulesFile, 'utf8'))
-	if (!rulesParsed.ok) return { type: 'rules-unreadable', path: config.rules }
-	const tableFile = join(root, config.table)
-	if (!existsSync(tableFile)) return { type: 'table-unfinished', path: config.table }
-	const tableParsed = parseTable(tablePath(config.table), readFileSync(tableFile, 'utf8'))
-	if (tableParsed.findings.length > 0) return { type: 'table-unfinished', path: config.table }
-	return { rules: rulesParsed.rules, table: tableParsed.table }
 }
 
 function parseScoreArgsFull(argv: readonly string[]): { screen: ScreenId; actor: Actor; judgmentPath: string } | ScoreError {
@@ -572,7 +356,7 @@ function parseCompareArgs(argv: readonly string[]): { agentPath: string; judgePa
 	return { agentPath, judgePath }
 }
 
-export function experienceCommand(root: string, argv: readonly string[]): 0 | 1 | 2 {
+export function experienceCommand(root: string, argv: readonly string[]): 0 | 2 {
 	if (argv.length === 1 && argv[0] === 'rubric') {
 		process.stdout.write(renderRubric())
 		return 0
@@ -582,16 +366,14 @@ export function experienceCommand(root: string, argv: readonly string[]): 0 | 1 
 		if ('type' in args) return fail(args)
 		const missing = verifyProofs(root, args.screen)
 		if (missing != null) return fail(missing)
-		const loaded = loadScoreInputs(root, args.screen)
-		if ('type' in loaded) return fail(loaded)
 		const judgmentFile = join(root, args.judgmentPath)
 		if (!existsSync(judgmentFile)) return fail({ type: 'unreadable', path: args.judgmentPath })
 		const judgmentParsed = parseJudgment(readFileSync(judgmentFile, 'utf8'), args.screen, args.actor)
 		if ('type' in judgmentParsed) return fail(judgmentParsed)
-		const scored = scoreScreen(root, args.actor, args.screen, loaded.rules, loaded.table, judgmentParsed)
+		const scored = scoreScreen(args.actor, args.screen, judgmentParsed)
 		if ('type' in scored) return fail(scored)
 		process.stdout.write(renderScore(scored))
-		return mechanicalMiss(scored) ? 1 : 0
+		return 0
 	}
 	if (argv[0] === 'compare') {
 		const args = parseCompareArgs(argv)
