@@ -60,21 +60,18 @@ function quietBranch(files: { path: string; text: string }[]): BranchView {
 const callSite1 = `rules  product-rules.md, 9 rules
 table  src/notifications/NotificationList.states.md, 2 surfaces
 
-errors 6
+errors 4
   src/notifications/NotificationList.states.md:5 notifications.machine. C-async-list (product-rules.md:5) covers list. Put C-async-list here and fill its slots.
-  src/notifications/NotificationList.states.md:5 notifications.empty. C-empty-state (product-rules.md:12) covers list.empty. Put C-empty-state in this cell.
-  src/notifications/NotificationList.states.md:5 notifications.loading. C-row-skeleton (product-rules.md:9) covers list.loading. Put C-row-skeleton in this cell.
-  src/notifications/NotificationList.states.md:5 notifications.populated. unlisted(Avatar) is C-avatar (product-rules.md:20). Write C-avatar.
+  src/notifications/NotificationList.states.md:5 notifications.populated. unlisted(Avatar) is C-avatar (product-rules.md:18). Write C-avatar.
   src/notifications/NotificationList.states.md:6 unread-count.loading. A remote surface needs a loading cell.
   src/notifications/NotificationList.states.md:6 unread-count.failed. A remote surface needs a failed cell.
 
-notes 2
-  uncovered list.failed. No rule covers it. src/notifications/NotificationList.states.md used unlisted(ErrorBanner).
+notes 1
   unlisted NotificationRow. product-rules.md does not list it. First seen in src/notifications/NotificationList.states.md.
 
 proposals 0`
 
-test('a first notification draft names the six misses and two notes', () => {
+test('a first notification draft names the four misses and one note', () => {
 	const value = checkScreens({
 		rules: rules(),
 		rulesPath: RULES_PATH,
@@ -85,7 +82,7 @@ test('a first notification draft names the six misses and two notes', () => {
 	assert.equal(report(value), callSite1)
 })
 
-test('two screens with the same gap print both rule diffs', () => {
+test('two screens with the same gap print one rule diff', () => {
 	const screen = (path: string, text: string) => quietBranch([{ path, text }])
 	const value = checkScreens({
 		rules: rules(),
@@ -102,14 +99,10 @@ test('two screens with the same gap print both rule diffs', () => {
 	})
 	assert.equal(value.findings.length, 0)
 	assert.equal(value.notes.length, 0)
-	assert.equal(value.proposals.length, 2)
-	assert.match(value.proposals[0]?.diff ?? '', /Covers: detail\.failed, list\.failed/)
-	assert.match(value.proposals[1]?.diff ?? '', /### C-notification-row `NotificationRow`/)
+	assert.equal(value.proposals.length, 1)
+	assert.match(value.proposals[0]?.diff ?? '', /### C-notification-row `NotificationRow`/)
 	const text = report(value)
-	assert.match(text, /uncovered list\.failed\. Seen in 2 screens\./)
 	assert.match(text, /unlisted NotificationRow\. Seen in 2 screens\./)
-	assert.match(text, /src\/notifications\/NotificationList\.states\.md {2}notifications used P-retry-inline/)
-	assert.match(text, /src\/mentions\/MentionsList\.states\.md {2}mentions used P-retry-inline/)
 })
 
 test('applying a proposal drops that issue', () => {
@@ -118,7 +111,7 @@ test('applying a proposal drops that issue', () => {
 		{ path: mentionsPath, text: mentionsTable },
 	]
 	const before = collectIssues(rules(), parsed.map((item) => parseTable(item.path, item.text).table))
-	assert.equal(before.repeats.length, 2)
+	assert.equal(before.repeats.length, 1)
 	let next = shopRules
 	for (const repeat of before.repeats) {
 		next = applyEdit(next, propose(rulesFrom(next), repeat))
@@ -165,11 +158,11 @@ test('forbidden empty copy fails when the table cites C-empty-state', () => {
 		type: 'correction',
 		at: { path: 'src/notifications/NotificationList.tsx', line: 4 },
 		rule: 'C-empty-state',
-		ruleLine: 12,
+		ruleLine: 11,
 		text: empty.text,
 		literal: 'No data',
 	})
-	assert.match(report(value), /"No data" breaks C-empty-state \(product-rules\.md:12\)/)
+	assert.match(report(value), /"No data" breaks C-empty-state \(product-rules\.md:11\)/)
 })
 
 test('a multi-line template with forbidden copy is still scanned', () => {
@@ -443,12 +436,19 @@ test('the skill example and the readme rules parse', () => {
 	assert.equal(fenced?.[1], shopRules)
 })
 
-test('two rules cannot cover one state', () => {
-	const parsed = parseRules(`${shopRules}\n### P-other\nCovers: list.empty\n`)
+test('two rules cannot cover one kind', () => {
+	const parsed = parseRules(`${shopRules}\n### P-other\nCovers: list\n`)
 	assert.equal(parsed.ok, false)
 	if (parsed.ok) return
-	assert.match(parsed.errors.map((error) => error.problem).join('\n'), /C-empty-state/)
+	assert.match(parsed.errors.map((error) => error.problem).join('\n'), /C-async-list/)
 	assert.match(parsed.errors.map((error) => error.problem).join('\n'), /P-other/)
+})
+
+test('a state-scoped cover is rejected', () => {
+	const parsed = parseRules(shopRules.replace('Covers: list\n', 'Covers: list.loading\n'))
+	assert.equal(parsed.ok, false)
+	if (parsed.ok) return
+	assert.match(parsed.errors.map((error) => error.problem).join('\n'), /State-scoped cover list\.loading/)
 })
 
 test('the check command reports the draft and writes nothing', () => {
@@ -470,7 +470,7 @@ test('the check command reports the draft and writes nothing', () => {
 	assert.equal(readFileSync(rulesDest, 'utf8'), before)
 })
 
-test('accept writes the cover only with --write and decline unlisted exits 2', () => {
+test('accept writes the component only with --write and decline exits 2', () => {
 	const dir = mkdtempSync(join(tmpdir(), 'dstack-accept-'))
 	mkdirSync(join(dir, 'src/notifications'), { recursive: true })
 	mkdirSync(join(dir, 'src/mentions'), { recursive: true })
@@ -494,20 +494,20 @@ test('accept writes the cover only with --write and decline unlisted exits 2', (
 	const run = (args: string[]) =>
 		spawnSync('node', ['--experimental-strip-types', script, ...args], { cwd: dir, encoding: 'utf8' })
 
-	const preview = run(['accept', 'uncovered', 'list.failed'])
+	const preview = run(['accept', 'unlisted', 'NotificationRow'])
 	assert.equal(preview.status, 0)
 	assert.match(preview.stdout, /status  ready/)
 	assert.match(preview.stdout, /write  no/)
-	assert.match(preview.stdout, /Covers: detail\.failed, list\.failed/)
+	assert.match(preview.stdout, /### C-notification-row `NotificationRow`/)
 	assert.equal(readFileSync(rulesDest, 'utf8'), rulesBefore)
 
-	const written = run(['accept', '--write', 'uncovered', 'list.failed'])
+	const written = run(['accept', '--write', 'unlisted', 'NotificationRow'])
 	assert.equal(written.status, 0)
 	assert.match(written.stdout, /write  yes/)
 	const rulesWritten = readFileSync(rulesDest, 'utf8')
-	assert.match(rulesWritten, /Covers: detail\.failed, list\.failed/)
+	assert.match(rulesWritten, /### C-notification-row `NotificationRow`/)
 
-	const again = run(['accept', 'uncovered', 'list.failed', '--write'])
+	const again = run(['accept', 'unlisted', 'NotificationRow', '--write'])
 	assert.equal(again.status, 0)
 	assert.match(again.stdout, /status  current/)
 	assert.match(again.stdout, /write  no/)
@@ -553,38 +553,6 @@ function countInRule(text: string, heading: string, line: string): number {
 	return lines.slice(start, end).filter((item) => item === line).length
 }
 
-test('accept uncovered list.failed covers it once and a second decide stays current', () => {
-	const tables = twoTables()
-	const decision = mustDecision('accept', 'uncovered list.failed')
-	const first = decide({ rules: rules(), rulesText: shopRules, tables, decision })
-	assert.equal(first.status, 'ready')
-	assert.equal(first.proposal, 'gone')
-	assert.equal(first.callers.length, 0)
-	assert.deepEqual(first.callers, callersOf(first.rulesText, tables))
-	assert.match(first.rulesText, /^Covers: detail\.failed, list\.failed$/m)
-	assert.equal(first.rulesText.split('list.failed').length - 1, 1)
-	const parsedNext = parseRules(first.rulesText)
-	assert.equal(parsedNext.ok, true)
-	if (!parsedNext.ok) return
-	const printed = formatDecision(decision, first, false)
-	assert.equal(
-		printed.split('\n').slice(0, 6).join('\n'),
-		['decision  accept uncovered list.failed', 'status  ready', 'proposal  gone', 'write  no', 'callers  0', ''].join('\n'),
-	)
-	assert.equal(printed.slice(printed.indexOf('product-rules.md')), `product-rules.md\n${first.rulesText}`)
-	const wrote = formatDecision(decision, first, true)
-	assert.match(wrote, /^write  yes$/m)
-	const second = decide({
-		rules: parsedNext.rules,
-		rulesText: first.rulesText,
-		tables,
-		decision,
-	})
-	assert.equal(second.status, 'current')
-	assert.equal(second.rulesText, first.rulesText)
-	assert.equal(second.rulesText.split('list.failed').length - 1, 1)
-})
-
 test('accept unlisted NotificationRow adds the heading and both parallel-name callers', () => {
 	const tables = twoTables()
 	const decision = mustDecision('accept', 'unlisted NotificationRow')
@@ -604,79 +572,19 @@ test('accept unlisted NotificationRow adds the heading and both parallel-name ca
 	assert.match(printed, /src\/mentions\/MentionsList\.states\.md:5 mentions\.populated\./)
 })
 
-test('decline uncovered list.failed inserts Renders nothing and a second decline stays current', () => {
-	const tables = twoTables()
-	const decision = mustDecision('decline', 'uncovered list.failed')
-	const first = decide({ rules: rules(), rulesText: shopRules, tables, decision })
-	assert.equal(first.status, 'ready')
-	assert.equal(first.proposal, 'gone')
-	assert.equal(first.callers.length, 2)
-	const lines = first.rulesText.split('\n')
-	const retry = lines.indexOf('### P-retry-inline')
-	assert.equal(lines[retry + 1], 'Covers: detail.failed')
-	const added = lines.indexOf('### P-list-failed')
-	assert.ok(added > retry)
-	assert.equal(lines[added + 1], 'Covers: list.failed')
-	assert.equal(lines[added + 2], 'Renders nothing.')
-	assert.equal(first.rulesText.includes('P-list-failed-2'), false)
-	assert.equal(first.rulesText.includes('Covers: detail.failed, list.failed'), false)
-	assert.deepEqual(first.callers, callersOf(first.rulesText, tables))
-	assert.deepEqual(
-		first.callers.map((caller) => caller.rule),
-		['P-list-failed', 'P-list-failed'],
-	)
-	const printed = formatDecision(decision, first, false)
-	assert.equal(printed.split('Put P-list-failed in this cell.').length - 1, 2)
-	assert.match(printed, /src\/notifications\/NotificationList\.states\.md:5 notifications\.failed\./)
-	assert.match(printed, /src\/mentions\/MentionsList\.states\.md:5 mentions\.failed\./)
-	const parsedNext = parseRules(first.rulesText)
-	assert.equal(parsedNext.ok, true)
-	if (!parsedNext.ok) return
-	const second = decide({
-		rules: parsedNext.rules,
-		rulesText: first.rulesText,
-		tables,
-		decision,
-	})
-	assert.equal(second.status, 'current')
-	assert.equal(second.rulesText, first.rulesText)
-	assert.equal(second.rulesText.includes('P-list-failed-2'), false)
-})
-
-test('decline of unlisted or corrected does not parse', () => {
+test('decline and a state-scoped key do not parse', () => {
 	const unlisted = parseDecision('decline', 'unlisted NotificationRow')
 	assert.equal(unlisted.ok, false)
 	if (unlisted.ok) return
-	assert.equal(typeof unlisted.problem, 'string')
-	assert.ok(unlisted.problem.length > 0)
+	assert.match(unlisted.problem, /Decline is not a command/)
 	const corrected = parseDecision('decline', 'corrected C-empty-state')
 	assert.equal(corrected.ok, false)
 	if (corrected.ok) return
-	assert.equal(typeof corrected.problem, 'string')
-	assert.ok(corrected.problem.length > 0)
-})
-
-test('decline of an accepted uncovered key is blocked', () => {
-	const tables = twoTables()
-	const accepted = decide({
-		rules: rules(),
-		rulesText: shopRules,
-		tables,
-		decision: mustDecision('accept', 'uncovered list.failed'),
-	})
-	assert.equal(accepted.status, 'ready')
-	const parsedNext = parseRules(accepted.rulesText)
-	assert.equal(parsedNext.ok, true)
-	if (!parsedNext.ok) return
-	const declined = decide({
-		rules: parsedNext.rules,
-		rulesText: accepted.rulesText,
-		tables,
-		decision: mustDecision('decline', 'uncovered list.failed'),
-	})
-	assert.equal(declined.status, 'blocked')
-	assert.equal(typeof declined.problem, 'string')
-	assert.equal('rulesText' in declined, false)
+	assert.match(corrected.problem, /Decline is not a command/)
+	const scoped = parseDecision('accept', 'uncovered list.failed')
+	assert.equal(scoped.ok, false)
+	if (scoped.ok) return
+	assert.match(scoped.problem, /Bad key uncovered list\.failed/)
 })
 
 test('accept corrected C-empty-state copies the shared bullet once', () => {
@@ -719,43 +627,5 @@ test('accept corrected is blocked when only some bullet lines are already in the
 	})
 	assert.equal(result.status, 'blocked')
 	assert.equal(typeof result.problem, 'string')
-	assert.equal('rulesText' in result, false)
-})
-
-test('decline is blocked when P-list-failed already covers a different coordinate', () => {
-	const taken = shopRules.replace(
-		'### P-relative-time\n',
-		'### P-list-failed\nCovers: detail.loading\nRenders nothing.\n\n### P-relative-time\n',
-	)
-	const parsedRules = parseRules(taken)
-	assert.equal(parsedRules.ok, true)
-	if (!parsedRules.ok) return
-	const pattern = parsedRules.rules.byId.get('P-list-failed' as RuleId)
-	assert.equal(pattern?.type, 'pattern')
-	if (pattern?.type !== 'pattern') return
-	assert.deepEqual(
-		pattern.covers.map((coord) => `${coord.kind}.${coord.state}`),
-		['detail.loading'],
-	)
-	let coversListFailed = false
-	for (const key of parsedRules.rules.coveredBy.keys()) {
-		if (key === 'list.failed') coversListFailed = true
-	}
-	assert.equal(coversListFailed, false)
-	const repeats = collectIssues(parsedRules.rules, twoTables()).repeats
-	assert.equal(
-		repeats.some((repeat) => repeat.type === 'uncovered' && `${repeat.coord.kind}.${repeat.coord.state}` === 'list.failed'),
-		true,
-	)
-	const result = decide({
-		rules: parsedRules.rules,
-		rulesText: taken,
-		tables: twoTables(),
-		decision: mustDecision('decline', 'uncovered list.failed'),
-	})
-	assert.equal(result.status, 'blocked')
-	assert.equal(typeof result.problem, 'string')
-	assert.match(result.problem, /P-list-failed/)
-	assert.equal(result.problem.includes('P-list-failed-2'), false)
 	assert.equal('rulesText' in result, false)
 })

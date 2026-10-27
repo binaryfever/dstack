@@ -26,4 +26,4 @@ A visible control for empty, loading, and failed. The shopper is here to read me
 
 ## Rule proposals not applied
 
-The dstack check reports two notes and zero proposals. This is the only screen, and a proposal needs the same gap on two screens. list.failed has no covering rule, and the failed cell uses P-retry-inline. MentionRow is not in the product rules. product-rules.md is unchanged.
+The dstack check reports one note and zero proposals. This is the only screen, and a proposal needs the same gap on two screens. MentionRow is not in the product rules. product-rules.md is unchanged.

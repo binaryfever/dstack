@@ -1,6 +1,6 @@
 ---
 name: dstack-accept
-description: "Accept or decline one dstack rule proposal. Use for /dstack-accept."
+description: "Accept one dstack rule proposal. Use for /dstack-accept."
 disable-model-invocation: true
 ---
 
@@ -15,15 +15,14 @@ The script is `node --experimental-strip-types <directory of this file>/../dstac
 When invoked as `/dstack-accept`:
 
 1. If the human did not name a key, run `node --experimental-strip-types <directory of this file>/../dstack/scripts/dstack.ts check`. Show the proposal lines and stop. Do not pick a key.
-2. If the human asks to decline `unlisted` or `corrected`, stop and say decline only covers an uncovered state.
-3. An accept key is `uncovered <kind.state>`, `unlisted <CodeName>`, or `corrected <RuleId>`. For an accept, run `node --experimental-strip-types <directory of this file>/../dstack/scripts/dstack.ts gate <key>` before the preview. Decline does not run the gate. For a decline, run `node --experimental-strip-types <directory of this file>/../dstack/scripts/dstack.ts decline uncovered <kind.state>` with `--write` off. Paste stdout and stop.
+2. If the human asks to decline a proposal, stop. A rule covers a whole kind. There is no per-state decline.
+3. An accept key is `unlisted <CodeName>` or `corrected <RuleId>`. Run `node --experimental-strip-types <directory of this file>/../dstack/scripts/dstack.ts gate <key>` before the preview.
 4. If the gate exits 0, run `node --experimental-strip-types <directory of this file>/../dstack/scripts/dstack.ts accept <key>` with `--write` off. Paste stdout and stop. Do not write in that turn.
 5. If the gate exits 3, the human runs the interrogate panel or writes a skip reason. The agent does not invent a reason. A bare yes is not a skip and not a write. After the panel command or `gate <key> --skip <reason>` exits 0, run the accept preview with `--write` off. Paste stdout and stop.
 6. If the gate exits 2, paste stderr and stop.
 7. Pass `--write` only when a later message includes the flag `--write`. A bare yes is not a write.
 8. If that message accepts and includes `--write`, run `node --experimental-strip-types <directory of this file>/../dstack/scripts/dstack.ts gate <key>` again. Exit 0 is required. Exit 3 or exit 2 means stop and do not pass `--write`. Then run the accept command with `--write` once, before the key or after it. Paste stdout and stop.
-9. If that message declines and includes `--write`, run the decline command with `--write` once. Do not run the gate. Paste stdout and stop.
-10. Do not edit `product-rules.md` yourself. Do not edit a `*.states.md` file in the same turn as the rules write. Do not commit. Do not merge.
+9. Do not edit `product-rules.md` yourself. Do not edit a `*.states.md` file in the same turn as the rules write. Do not commit. Do not merge.
 
 ## Edit the named cells
 
