@@ -23,10 +23,8 @@ import { gateCommand } from './gate.ts'
 type Exit = 0 | 1 | 2 | 3
 
 const USAGE = `usage: dstack check [table.states.md]
-usage: dstack accept [--write] uncovered <kind.state>
 usage: dstack accept [--write] unlisted <CodeName>
 usage: dstack accept [--write] corrected <RuleId>
-usage: dstack decline [--write] uncovered <kind.state>
 usage: dstack gate <key>
 usage: dstack gate <key> --panel <file> --hash <64-hex>
 usage: dstack gate <key> --skip <reason>
@@ -97,9 +95,9 @@ function branchFor(root: string, table: string, changed: Set<string>): BranchVie
 
 function settleArgs(
 	argv: readonly string[],
-): { action: 'accept' | 'decline'; write: boolean; key: string } | null {
+): { action: 'accept'; write: boolean; key: string } | null {
 	const action = argv[0]
-	if (action !== 'accept' && action !== 'decline') return null
+	if (action !== 'accept') return null
 	const words: string[] = []
 	let write = false
 	for (const arg of argv.slice(1)) {
@@ -162,7 +160,7 @@ function settle(argv: readonly string[]): 0 | 2 {
 }
 
 function main(argv: readonly string[]): Exit {
-	if (argv[0] === 'accept' || argv[0] === 'decline') return settle(argv)
+	if (argv[0] === 'accept') return settle(argv)
 	if (argv[0] === 'gate') {
 		const root = repoRoot()
 		if (root == null) {

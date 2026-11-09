@@ -15,8 +15,6 @@ export const REQUIRED_STATES = {
 export type Source = keyof typeof REQUIRED_STATES
 export type RequiredState<S extends Source> = (typeof REQUIRED_STATES)[S][number]
 
-export type StatusState = Exclude<UiState, 'populated'>
-
 declare const brand: unique symbol
 type Brand<T, B extends string> = T & { readonly [brand]: B }
 export type RuleId = Brand<string, 'RuleId'>
@@ -30,7 +28,6 @@ export const RULE_PREFIX = { component: 'C', pattern: 'P', token: 'T' } as const
 export type RuleType = keyof typeof RULE_PREFIX
 
 export type Coord = { kind: SurfaceKind; state: UiState | null }
-export type StatusCoord = { kind: SurfaceKind; state: StatusState }
 
 export type RuleLines = { heading: number; last: number; covers: number | null }
 
@@ -89,7 +86,6 @@ export type Finding =
 export type Hit<T> = T & { table: TablePath }
 
 export type Issue =
-	| { type: 'uncovered'; coord: StatusCoord; hits: NonEmpty<Hit<{ surface: string; cell: Cell }>> }
 	| { type: 'unlisted'; name: CodeName; hits: NonEmpty<Hit<{ surface: string }>> }
 	| { type: 'corrected'; rule: RuleId; hits: NonEmpty<Hit<{ text: string }>> }
 
@@ -115,13 +111,10 @@ export type Report = {
 }
 
 export type IssueKey =
-	| { type: 'uncovered'; coord: StatusCoord }
 	| { type: 'unlisted'; name: CodeName }
 	| { type: 'corrected'; rule: RuleId }
 
-export type Decision =
-	| { action: 'accept'; key: IssueKey }
-	| { action: 'decline'; key: Extract<IssueKey, { type: 'uncovered' }> }
+export type Decision = { action: 'accept'; key: IssueKey }
 
 export type CallerFinding = Extract<Finding, { type: 'parallel-name' | 'ignored-cover' }>
 
@@ -281,15 +274,8 @@ export function coordKey(coord: Coord): CoordKey {
 }
 
 export function parseCoord(text: string): Coord | null {
-	const dot = text.indexOf('.')
-	if (dot === -1) {
-		if (text.length === 0 || text.includes(' ')) return null
-		return { kind: surfaceKind(text), state: null }
-	}
-	const kind = text.slice(0, dot)
-	const state = text.slice(dot + 1)
-	if (kind.length === 0 || !UI_STATES.includes(state as UiState)) return null
-	return { kind: surfaceKind(kind), state: state as UiState }
+	if (text.length === 0 || text.includes(' ') || text.includes('.')) return null
+	return { kind: surfaceKind(text), state: null }
 }
 
 function prefixOf(id: string): RuleType | null {
@@ -366,7 +352,7 @@ export function parseRules(
 		if (current == null) continue
 		if (line.startsWith('Covers:')) {
 			if (current.type === 'token') {
-				errors.push({ line: lineNo, problem: `${current.id} is a token and cannot cover a state.` })
+				errors.push({ line: lineNo, problem: `${current.id} is a token and cannot cover a kind.` })
 				continue
 			}
 			if (current.coversLine != null) {
@@ -376,6 +362,10 @@ export function parseRules(
 			current.coversLine = lineNo
 			const body = line.slice('Covers:'.length).trim()
 			for (const part of body.split(',').map((item) => item.trim()).filter((item) => item.length > 0)) {
+				if (part.includes('.')) {
+					errors.push({ line: lineNo, problem: `State-scoped cover ${part}. Name the kind.` })
+					continue
+				}
 				const coord = parseCoord(part)
 				if (coord == null) {
 					errors.push({ line: lineNo, problem: `Bad coordinate ${part}.` })
@@ -456,16 +446,6 @@ function parseRef(text: string): Ref | { error: string } {
 	if (unlisted) return { type: 'unlisted', name: codeName(unlisted[1] ?? '') }
 	if (RULE_ID.test(text)) return { type: 'rule', id: ruleId(text) }
 	return { error: text }
-}
-
-function renderRef(ref: Ref): string {
-	if (ref.type === 'none') return 'none'
-	if (ref.type === 'unlisted') return `unlisted(${ref.name})`
-	return ref.id
-}
-
-function renderCell(cell: Cell): string {
-	return cell.map(renderRef).join(' + ')
 }
 
 const HEADER = ['surface', 'kind', 'source', 'machine', 'empty', 'loading', 'failed', 'populated']
@@ -677,17 +657,6 @@ export function checkTable(rules: Rules, table: StateTable): Finding[] {
 					}
 				}
 			}
-			const cover = rules.coveredBy.get(coordKeyOf(surface.kind, state))
-			if (cover != null && !cell.some((ref) => ref.type === 'rule' && ref.id === cover)) {
-				findings.push({
-					type: 'ignored-cover',
-					at,
-					surface: surface.name,
-					coord: { kind: surface.kind, state },
-					rule: cover,
-					ruleLine: ruleLine(rules, cover),
-				})
-			}
 		}
 	}
 	for (const correction of table.corrections) {
@@ -701,13 +670,6 @@ export function checkTable(rules: Rules, table: StateTable): Finding[] {
 		}
 	}
 	return findings
-}
-
-function coversState(rules: Rules, surface: Surface, state: UiState): boolean {
-	const cover = rules.coveredBy.get(coordKeyOf(surface.kind, state))
-	if (cover == null) return true
-	const cell = (surface.cells as Readonly<Record<string, Cell>>)[state]
-	return cell != null && cell.some((ref) => ref.type === 'rule' && ref.id === cover)
 }
 
 export function checkBranch(rules: Rules, table: StateTable, branch: BranchView): Finding[] {
@@ -912,7 +874,6 @@ function pushHit<T>(map: Map<string, Issue>, key: string, issue: Issue): void {
 }
 
 function formatIssueKey(issue: IssueKey): string {
-	if (issue.type === 'uncovered') return `uncovered ${coordKey(issue.coord)}`
 	if (issue.type === 'unlisted') return `unlisted ${issue.name}`
 	return `corrected ${issue.rule}`
 }
@@ -925,28 +886,16 @@ export function collectIssues(rules: Rules, tables: readonly StateTable[]): { no
 	const grouped = new Map<string, Issue>()
 	for (const table of tables) {
 		for (const surface of table.surfaces) {
-			for (const state of REQUIRED_STATES[surface.source]) {
-				if (state === 'populated') continue
-				if (rules.coveredBy.has(coordKeyOf(surface.kind, state))) continue
-				const cell = (surface.cells as Readonly<Record<string, Cell>>)[state] as Cell
-				const issue: Issue = {
-					type: 'uncovered',
-					coord: { kind: surface.kind, state },
-					hits: [{ table: table.path, surface: surface.name, cell }],
-				}
-				pushHit(grouped, issueKey(issue), issue)
-			}
 			const populated = (surface.cells as Readonly<Record<string, Cell>>).populated as Cell | undefined
-			if (populated != null && coversState(rules, surface, 'populated')) {
-				for (const ref of populated) {
-					if (ref.type === 'unlisted' && !rules.byCodeName.has(ref.name)) {
-						const issue: Issue = {
-							type: 'unlisted',
-							name: ref.name,
-							hits: [{ table: table.path, surface: surface.name }],
-						}
-						pushHit(grouped, issueKey(issue), issue)
+			if (populated == null) continue
+			for (const ref of populated) {
+				if (ref.type === 'unlisted' && !rules.byCodeName.has(ref.name)) {
+					const issue: Issue = {
+						type: 'unlisted',
+						name: ref.name,
+						hits: [{ table: table.path, surface: surface.name }],
 					}
+					pushHit(grouped, issueKey(issue), issue)
 				}
 			}
 		}
@@ -996,30 +945,6 @@ function lastRule(rules: Rules, type: RuleType): Rule | null {
 	return found
 }
 
-function winningRule(rules: Rules, cells: readonly Cell[]): RuleId | null {
-	const counts = new Map<string, { id: RuleId; n: number; order: number }>()
-	let order = 0
-	for (const cell of cells) {
-		for (const ref of cell) {
-			if (ref.type !== 'rule') continue
-			const rule = rules.byId.get(ref.id)
-			if (rule == null || rule.type === 'token') continue
-			const prior = counts.get(ref.id)
-			if (prior != null) prior.n += 1
-			else counts.set(ref.id, { id: ref.id, n: 1, order: order++ })
-		}
-	}
-	const ranked = [...counts.values()].sort((a, b) => b.n - a.n || a.order - b.order)
-	return ranked[0]?.id ?? null
-}
-
-function coverWithRendersNothing(rules: Rules, coord: StatusCoord): RuleEdit {
-	const id = freshId(rules, 'P', `${coord.kind}-${coord.state}`)
-	const prior = lastRule(rules, 'pattern')
-	const at = prior == null ? rules.lines.length + 1 : prior.lines.last + 1
-	return { at, remove: [], add: ['', `### ${id}`, `Covers: ${coordKey(coord)}`, 'Renders nothing.'] }
-}
-
 export function propose(rules: Rules, repeat: Repeat): RuleEdit {
 	if (repeat.type === 'corrected') {
 		const rule = rules.byId.get(repeat.rule)
@@ -1040,30 +965,8 @@ export function propose(rules: Rules, repeat: Repeat): RuleEdit {
 		const at = prior == null ? rules.lines.length + 1 : prior.lines.last + 1
 		return { at, remove: [], add: ['', heading] }
 	}
-	const key = coordKey(repeat.coord)
-	const winner = winningRule(
-		rules,
-		repeat.hits.map((hit) => hit.cell),
-	)
-	if (winner != null) {
-		const rule = rules.byId.get(winner)
-		if (rule != null && rule.type !== 'token' && rule.lines.covers != null) {
-			const coversLine = rules.lines[rule.lines.covers - 1] ?? ''
-			return { at: rule.lines.covers, remove: [coversLine], add: [`${coversLine}, ${key}`] }
-		}
-		if (rule != null) {
-			return { at: rule.lines.heading + 1, remove: [], add: [`Covers: ${key}`] }
-		}
-	}
-	const unlisted = repeat.hits.flatMap((hit) => hit.cell.filter((ref) => ref.type === 'unlisted'))
-	if (unlisted.length > 0) {
-		const name = unlisted[0]?.type === 'unlisted' ? unlisted[0].name : 'component'
-		const id = freshId(rules, 'C', kebab(name))
-		const prior = lastRule(rules, 'component')
-		const at = prior == null ? rules.lines.length + 1 : prior.lines.last + 1
-		return { at, remove: [], add: ['', `### ${id} \`${name}\``, `Covers: ${key}`] }
-	}
-	return coverWithRendersNothing(rules, repeat.coord)
+	const never: never = repeat
+	return never
 }
 
 export function renderDiff(rules: Rules, edit: RuleEdit): string {
@@ -1166,10 +1069,6 @@ function findingLine(finding: Finding): string {
 
 function noteLine(issue: Issue): string {
 	const key = issueKey(issue)
-	if (issue.type === 'uncovered') {
-		const hit = issue.hits[0]
-		return `  ${key}. No rule covers it. ${hit?.table} used ${hit == null ? '' : renderCell(hit.cell)}.`
-	}
 	if (issue.type === 'unlisted') {
 		const hit = issue.hits[0]
 		return `  ${key}. ${RULES_PATH} does not list it. First seen in ${hit?.table}.`
@@ -1182,9 +1081,7 @@ function proposalBlock(repeat: Repeat, diff: string): string {
 	const key = issueKey(repeat)
 	const screens = new Set(repeat.hits.map((hit) => hit.table)).size
 	const lines = [`  ${key}. Seen in ${screens} screens.`]
-	if (repeat.type === 'uncovered') {
-		for (const hit of repeat.hits) lines.push(`    ${hit.table}  ${hit.surface} used ${renderCell(hit.cell)}`)
-	} else if (repeat.type === 'unlisted') {
+	if (repeat.type === 'unlisted') {
 		for (const hit of repeat.hits) lines.push(`    ${hit.table}  ${hit.surface}`)
 	} else {
 		for (const hit of repeat.hits) lines.push(`    ${hit.table}  ${hit.text}`)
@@ -1271,20 +1168,11 @@ export function parseDecision(
 	action: string,
 	key: string,
 ): { ok: true; decision: Decision } | { ok: false; problem: string } {
-	if (action !== 'accept' && action !== 'decline') return { ok: false, problem: `Bad action ${action}.` }
+	if (action === 'decline') return { ok: false, problem: 'Decline is not a command.' }
+	if (action !== 'accept') return { ok: false, problem: `Bad action ${action}.` }
 	const space = key.indexOf(' ')
 	const type = space === -1 ? '' : key.slice(0, space)
 	const rest = space === -1 ? '' : key.slice(space + 1)
-	if (type === 'uncovered' && rest.length > 0 && !rest.includes(' ')) {
-		const coord = parseCoord(rest)
-		if (coord == null || coord.state == null || coord.state === 'populated') {
-			return { ok: false, problem: `Bad coordinate ${rest}.` }
-		}
-		const status = { kind: coord.kind, state: coord.state }
-		if (action === 'decline') return { ok: true, decision: { action: 'decline', key: { type: 'uncovered', coord: status } } }
-		return { ok: true, decision: { action: 'accept', key: { type: 'uncovered', coord: status } } }
-	}
-	if (action === 'decline') return { ok: false, problem: 'Decline names an uncovered coordinate.' }
 	if (type === 'unlisted' && CODE_NAME.test(rest)) {
 		return { ok: true, decision: { action: 'accept', key: { type: 'unlisted', name: codeName(rest) } } }
 	}
@@ -1300,28 +1188,10 @@ function repeatIndex(rules: Rules, tables: readonly StateTable[]): Map<string, R
 	return index
 }
 
-function cellsForCoord(tables: readonly StateTable[], coord: StatusCoord): Cell[] {
-	const cells: Cell[] = []
-	for (const table of tables) {
-		for (const surface of table.surfaces) {
-			if (surface.kind !== coord.kind) continue
-			const cell = (surface.cells as Readonly<Record<string, Cell>>)[coord.state]
-			if (cell != null) cells.push(cell)
-		}
-	}
-	return cells
-}
-
 function spanLines(rules: Rules, rule: Rule): string[] {
 	const lines: string[] = []
 	for (let line = rule.lines.heading; line <= rule.lines.last; line++) lines.push(rules.lines[line - 1] ?? '')
 	return lines
-}
-
-function rendersNothing(rules: Rules, id: RuleId): boolean {
-	const rule = rules.byId.get(id)
-	if (rule == null) return false
-	return spanLines(rules, rule).includes('Renders nothing.')
 }
 
 function callerFindings(rules: Rules, tables: readonly StateTable[]): CallerFinding[] {
@@ -1377,51 +1247,6 @@ function correctionSettled(rules: Rules, id: RuleId, texts: readonly string[]): 
 	return texts.every((text) => lines.filter((line) => line === text).length === 1)
 }
 
-function declineSettled(rules: Rules, coord: StatusCoord): boolean {
-	const id = rules.coveredBy.get(coordKey(coord))
-	if (id == null) return false
-	return rendersNothing(rules, id)
-}
-
-function declineIdCoversOther(rules: Rules, coord: StatusCoord): boolean {
-	const existing = rules.byId.get(ruleId(`P-${coord.kind}-${coord.state}`))
-	if (existing == null || existing.type === 'token') return false
-	const key = coordKey(coord)
-	return existing.covers.some((item) => coordKey(item) !== key)
-}
-
-function decideUncovered(
-	rules: Rules,
-	rulesText: string,
-	tables: readonly StateTable[],
-	index: ReadonlyMap<string, Repeat>,
-	action: Decision['action'],
-	coord: StatusCoord,
-): DecisionResult {
-	const key = coordKey(coord)
-	const cover = rules.coveredBy.get(key)
-	if (cover != null) {
-		const winner = winningRule(rules, cellsForCoord(tables, coord))
-		const quiet = rendersNothing(rules, cover)
-		if (action === 'accept' && (winner === cover || (winner == null && quiet))) {
-			return settledCurrent(rules, rulesText, tables, 'gone')
-		}
-		if (action === 'decline' && quiet && winner !== cover) return settledCurrent(rules, rulesText, tables, 'gone')
-		return { status: 'blocked', problem: `${cover} already covers ${key}.` }
-	}
-	const repeat = index.get(formatIssueKey({ type: 'uncovered', coord }))
-	if (repeat == null || repeat.type !== 'uncovered') {
-		return { status: 'blocked', problem: `uncovered ${key} is not a proposal.` }
-	}
-	if (action === 'accept') {
-		return settleEdit(rulesText, tables, propose(rules, repeat), 'gone', (next) => next.coveredBy.has(key))
-	}
-	if (declineIdCoversOther(rules, coord)) {
-		return { status: 'blocked', problem: `P-${coord.kind}-${coord.state} already covers a different coordinate.` }
-	}
-	return settleEdit(rulesText, tables, coverWithRendersNothing(rules, coord), 'gone', (next) => declineSettled(next, coord))
-}
-
 function decideUnlisted(
 	rules: Rules,
 	rulesText: string,
@@ -1466,8 +1291,7 @@ export function decide(input: {
 	const index = repeatIndex(input.rules, input.tables)
 	const key = input.decision.key
 	if (key.type === 'unlisted') return decideUnlisted(input.rules, input.rulesText, input.tables, index, key.name)
-	if (key.type === 'corrected') return decideCorrected(input.rules, input.rulesText, input.tables, index, key.rule)
-	return decideUncovered(input.rules, input.rulesText, input.tables, index, input.decision.action, key.coord)
+	return decideCorrected(input.rules, input.rulesText, input.tables, index, key.rule)
 }
 
 export function formatDecision(

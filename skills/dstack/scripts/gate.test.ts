@@ -52,21 +52,21 @@ function hashFromPacket(stdout: string): string {
 	return line.slice('hash  '.length).trim()
 }
 
-test('gate show on two-screen uncovered prints packet and leaves rules alone', () => {
+test('gate show on two-screen unlisted prints packet and leaves rules alone', () => {
 	const repo = shopTwoRepo()
 	const rulesBefore = readFileSync(join(repo, 'product-rules.md'), 'utf8')
-	const show = run(repo, ['gate', 'uncovered', 'list.failed'])
+	const show = run(repo, ['gate', 'unlisted', 'NotificationRow'])
 	assert.equal(show.status, 3)
 	assert.match(show.stdout, /src\/notifications\/NotificationList\.states\.md/)
 	assert.match(show.stdout, /src\/mentions\/MentionsList\.states\.md/)
-	assert.match(show.stdout, /Covers: detail\.failed, list\.failed/)
+	assert.match(show.stdout, /### C-notification-row `NotificationRow`/)
 	assert.equal(readFileSync(join(repo, 'product-rules.md'), 'utf8'), rulesBefore)
-	assert.equal(existsSync(gateRecordPath(repo, 'uncovered list.failed')), false)
+	assert.equal(existsSync(gateRecordPath(repo, 'unlisted NotificationRow')), false)
 })
 
 test('gate panel record, idempotent panel, and bound refusal', () => {
 	const repo = shopTwoRepo()
-	const show = run(repo, ['gate', 'uncovered', 'list.failed'])
+	const show = run(repo, ['gate', 'unlisted', 'NotificationRow'])
 	assert.equal(show.status, 3)
 	const hash = hashFromPacket(show.stdout)
 	const panelPath = join(repo, 'panel.json')
@@ -79,18 +79,18 @@ test('gate panel record, idempotent panel, and bound refusal', () => {
 		}),
 		'utf8',
 	)
-	const panel = run(repo, ['gate', 'uncovered', 'list.failed', '--panel', panelPath, '--hash', hash])
+	const panel = run(repo, ['gate', 'unlisted', 'NotificationRow', '--panel', panelPath, '--hash', hash])
 	assert.equal(panel.status, 0)
 	assert.match(panel.stdout, /because  First because line\./)
-	const recordBytes = readFileSync(gateRecordPath(repo, 'uncovered list.failed'), 'utf8')
+	const recordBytes = readFileSync(gateRecordPath(repo, 'unlisted NotificationRow'), 'utf8')
 
-	const again = run(repo, ['gate', 'uncovered', 'list.failed'])
+	const again = run(repo, ['gate', 'unlisted', 'NotificationRow'])
 	assert.equal(again.status, 0)
 	assert.match(again.stdout, /because  First because line\./)
 
-	const samePanel = run(repo, ['gate', 'uncovered', 'list.failed', '--panel', panelPath, '--hash', hash])
+	const samePanel = run(repo, ['gate', 'unlisted', 'NotificationRow', '--panel', panelPath, '--hash', hash])
 	assert.equal(samePanel.status, 0)
-	assert.equal(readFileSync(gateRecordPath(repo, 'uncovered list.failed'), 'utf8'), recordBytes)
+	assert.equal(readFileSync(gateRecordPath(repo, 'unlisted NotificationRow'), 'utf8'), recordBytes)
 
 	writeFileSync(
 		panelPath,
@@ -101,11 +101,11 @@ test('gate panel record, idempotent panel, and bound refusal', () => {
 		}),
 		'utf8',
 	)
-	const different = run(repo, ['gate', 'uncovered', 'list.failed', '--panel', panelPath, '--hash', hash])
+	const different = run(repo, ['gate', 'unlisted', 'NotificationRow', '--panel', panelPath, '--hash', hash])
 	assert.equal(different.status, 2)
 	assert.match(different.stderr, /gate already bound/)
 	assert.match(different.stdout, /because  First because line\./)
-	assert.equal(readFileSync(gateRecordPath(repo, 'uncovered list.failed'), 'utf8'), recordBytes)
+	assert.equal(readFileSync(gateRecordPath(repo, 'unlisted NotificationRow'), 'utf8'), recordBytes)
 })
 
 test('gate skip, cross-kind refusal, and blank skip', () => {
@@ -133,7 +133,7 @@ test('gate skip, cross-kind refusal, and blank skip', () => {
 	assert.match(run(repo, ['gate', 'unlisted', 'NotificationRow']).stdout, /panel  skipped/)
 
 	const repo2 = shopTwoRepo()
-	const show = run(repo2, ['gate', 'uncovered', 'list.failed'])
+	const show = run(repo2, ['gate', 'unlisted', 'NotificationRow'])
 	const hash = hashFromPacket(show.stdout)
 	const secondPanel = join(repo2, 'panel.json')
 	writeFileSync(
@@ -145,12 +145,12 @@ test('gate skip, cross-kind refusal, and blank skip', () => {
 		}),
 		'utf8',
 	)
-	run(repo2, ['gate', 'uncovered', 'list.failed', '--panel', secondPanel, '--hash', hash])
-	const skipAfter = run(repo2, ['gate', 'uncovered', 'list.failed', '--skip', 'Too late'])
+	run(repo2, ['gate', 'unlisted', 'NotificationRow', '--panel', secondPanel, '--hash', hash])
+	const skipAfter = run(repo2, ['gate', 'unlisted', 'NotificationRow', '--skip', 'Too late'])
 	assert.equal(skipAfter.status, 2)
 	assert.match(skipAfter.stderr, /gate already bound/)
 
-	const blank = run(repo, ['gate', 'uncovered', 'list.failed', '--skip', '   '])
+	const blank = run(repo, ['gate', 'unlisted', 'NotificationRow', '--skip', '   '])
 	assert.equal(blank.status, 2)
 	assert.match(blank.stderr, /skip needs a reason/)
 })
@@ -166,12 +166,12 @@ test('gate rejects one-table key and stale hash after rules edit', () => {
 	spawnSync('git', ['init'], { cwd: soloRepo })
 	spawnSync('git', ['add', '.'], { cwd: soloRepo })
 	spawnSync('git', ['-c', 'user.email=a@b.c', '-c', 'user.name=dstack', 'commit', '-m', 'solo'], { cwd: soloRepo })
-	const solo = run(soloRepo, ['gate', 'uncovered', 'list.failed'])
+	const solo = run(soloRepo, ['gate', 'unlisted', 'NotificationRow'])
 	assert.equal(solo.status, 2)
 	assert.match(solo.stderr, /not a proposal/)
 
 	const staleRepo = shopTwoRepo()
-	const open = run(staleRepo, ['gate', 'uncovered', 'list.failed'])
+	const open = run(staleRepo, ['gate', 'unlisted', 'NotificationRow'])
 	const hash = hashFromPacket(open.stdout)
 	const panelPath = join(staleRepo, 'panel.json')
 	writeFileSync(
@@ -183,14 +183,14 @@ test('gate rejects one-table key and stale hash after rules edit', () => {
 		}),
 		'utf8',
 	)
-	run(staleRepo, ['gate', 'uncovered', 'list.failed', '--panel', panelPath, '--hash', hash])
+	run(staleRepo, ['gate', 'unlisted', 'NotificationRow', '--panel', panelPath, '--hash', hash])
 	const rulesPath = join(staleRepo, 'product-rules.md')
 	writeFileSync(rulesPath, `${readFileSync(rulesPath, 'utf8')}# touch\n`, 'utf8')
-	const missing = run(staleRepo, ['gate', 'uncovered', 'list.failed'])
+	const missing = run(staleRepo, ['gate', 'unlisted', 'NotificationRow'])
 	assert.equal(missing.status, 3)
 	assert.match(missing.stdout, /panel  missing/)
 
-	const changed = run(staleRepo, ['gate', 'uncovered', 'list.failed', '--panel', panelPath, '--hash', hash])
+	const changed = run(staleRepo, ['gate', 'unlisted', 'NotificationRow', '--panel', panelPath, '--hash', hash])
 	assert.equal(changed.status, 2)
 	assert.match(changed.stderr, /proposal changed/)
 	assert.match(changed.stdout, /panel  missing/)
@@ -201,8 +201,8 @@ test('gate rejects one-table key and stale hash after rules edit', () => {
 test('accept --write still writes when no gate file exists', () => {
 	const repo = shopTwoRepo()
 	const rulesBefore = readFileSync(join(repo, 'product-rules.md'), 'utf8')
-	const written = run(repo, ['accept', '--write', 'uncovered', 'list.failed'])
+	const written = run(repo, ['accept', '--write', 'unlisted', 'NotificationRow'])
 	assert.equal(written.status, 0)
-	assert.match(readFileSync(join(repo, 'product-rules.md'), 'utf8'), /Covers: detail\.failed, list\.failed/)
+	assert.match(readFileSync(join(repo, 'product-rules.md'), 'utf8'), /### C-notification-row `NotificationRow`/)
 	assert.notEqual(readFileSync(join(repo, 'product-rules.md'), 'utf8'), rulesBefore)
 })

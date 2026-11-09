@@ -10,7 +10,6 @@ const root = join(import.meta.dirname, '../../..')
 const script = join(root, 'skills/dstack/scripts/dstack.ts')
 const agentJudgment = '.audit/experience/spruce/agent-judgment.md'
 const agentScore = '.audit/experience/spruce/agent-score.md'
-const spruceTable = '.audit/builds/spruce/src/mentions/MentionsList.states.md'
 
 function run(args: string[], cwd = root) {
 	return spawnSync('node', ['--experimental-strip-types', script, ...args], { cwd, encoding: 'utf8' })
@@ -23,7 +22,6 @@ function initRepo(dir: string) {
 }
 
 function copySpruceFixture(dir: string) {
-	cpSync(join(root, '.audit/builds/spruce/product-rules.md'), join(dir, 'product-rules.md'))
 	mkdirSync(join(dir, '.audit/proof'), { recursive: true })
 	for (const name of [
 		'spruce-empty.png',
@@ -34,7 +32,6 @@ function copySpruceFixture(dir: string) {
 	]) {
 		cpSync(join(root, '.audit/proof', name), join(dir, '.audit/proof', name))
 	}
-	cpSync(join(root, '.audit/builds/spruce'), join(dir, '.audit/builds/spruce'), { recursive: true })
 	mkdirSync(join(dir, '.audit/experience/spruce'), { recursive: true })
 	cpSync(join(root, agentJudgment), join(dir, agentJudgment))
 }
@@ -46,11 +43,14 @@ test('the module export keys are exactly experienceCommand', () => {
 test('experience rubric exits 0 and includes each id and its bar', () => {
 	const result = run(['experience', 'rubric'])
 	assert.equal(result.status, 0)
-	for (const id of ['empty-copy', 'hierarchy', 'no-parallel-card', 'visual']) {
+	for (const id of ['empty-copy', 'hierarchy', 'visual']) {
 		assert.ok(result.stdout.includes(id))
 	}
 	assert.ok(result.stdout.includes('A slogan that only says nothing is here fails.'))
-	assert.ok(result.stdout.includes('A card grid fails.'))
+	assert.ok(result.stdout.includes('A second title fails.'))
+	assert.ok(result.stdout.includes('The failed proof shows the failed state'))
+	assert.equal(result.stdout.includes('no-parallel-card'), false)
+	assert.equal(result.stdout.includes('card'), false)
 })
 
 test('scoring the committed spruce judgment exits 0 and matches agent-score.md', () => {
@@ -60,25 +60,10 @@ test('scoring the committed spruce judgment exits 0 and matches agent-score.md',
 	assert.equal(result.stdout, expected.endsWith('\n') ? expected : `${expected}\n`)
 })
 
-test('mention card in spruce copy exits 1 on experience and check stays 0', () => {
-	const dir = mkdtempSync(join(tmpdir(), 'dstack-exp-card-'))
-	copySpruceFixture(dir)
-	const jsPath = join(dir, '.audit/builds/spruce/src/mentions/MentionsList.js')
-	writeFileSync(jsPath, `${readFileSync(jsPath, 'utf8')}\nfunction MentionCard() { return null }\n`)
-	initRepo(dir)
-	const scored = run(['experience', 'score', 'spruce', '--actor', 'agent', '--judgment', agentJudgment], dir)
-	assert.equal(scored.status, 1)
-	assert.match(scored.stdout, /no-parallel-card mechanical 0/)
-	assert.match(scored.stdout, /MentionCard is declared at/)
-	assert.doesNotMatch(scored.stdout, /MentionRow is declared at/)
-	const checked = run(['check', spruceTable], dir)
-	assert.equal(checked.status, 0)
-})
-
-test('a judgment file with no-parallel-card exits 2 with empty stdout', () => {
+test('an unknown judgment section exits 2 with empty stdout', () => {
 	const dir = mkdtempSync(join(tmpdir(), 'dstack-exp-mech-'))
 	copySpruceFixture(dir)
-	const bad = `${readFileSync(join(dir, agentJudgment), 'utf8')}\n## no-parallel-card\nmark: 1\nbecause: no\n`
+	const bad = `${readFileSync(join(dir, agentJudgment), 'utf8')}\n## density\nmark: 1\nbecause: no\n`
 	writeFileSync(join(dir, agentJudgment), bad)
 	initRepo(dir)
 	const result = run(['experience', 'score', 'spruce', '--actor', 'agent', '--judgment', agentJudgment], dir)
@@ -101,18 +86,6 @@ test('empty-copy mark 0 still exits 0', () => {
 	const result = run(['experience', 'score', 'spruce', '--actor', 'agent', '--judgment', agentJudgment], dir)
 	assert.equal(result.status, 0)
 	assert.match(result.stdout, /empty-copy judgment 0/)
-})
-
-test('populated mention card name exits 1 not 2', () => {
-	const dir = mkdtempSync(join(tmpdir(), 'dstack-exp-unlisted-'))
-	copySpruceFixture(dir)
-	const tablePath = join(dir, spruceTable)
-	const table = readFileSync(tablePath, 'utf8').replace('unlisted(MentionRow)', 'unlisted(MentionCard)')
-	writeFileSync(tablePath, table)
-	initRepo(dir)
-	const result = run(['experience', 'score', 'spruce', '--actor', 'agent', '--judgment', agentJudgment], dir)
-	assert.equal(result.status, 1)
-	assert.match(result.stdout, /no-parallel-card mechanical 0/)
 })
 
 test('compare prints agree for identical scores and differ with exit 0', () => {

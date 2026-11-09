@@ -267,12 +267,12 @@ function humanText(key: ProposalKey, view: Exclude<GateView, { type: 'missing' }
 	const hash = view.record.hash
 	const lines: string[] = [`gate  ${key}`, `hash  ${shortHash(hash)}`]
 	if (view.type === 'skip') {
-		lines.push('panel  skipped', `reason  ${view.record.reason}`, 'rules  unchanged', 'next  accept or decline with /dstack-accept')
+		lines.push('panel  skipped', `reason  ${view.record.reason}`, 'rules  unchanged', 'next  accept with /dstack-accept')
 		return `${lines.join('\n')}\n`
 	}
 	lines.push('panel  interrogate', `reviewers  ${view.record.reviewers.join(', ')}`)
 	for (const id of MARKS) lines.push(`${id}  ${view.record.marks[id]}`)
-	lines.push(`stance  ${stance(view.record.marks)}`, `because  ${view.record.because}`, 'rules  unchanged', 'next  accept or decline with /dstack-accept')
+	lines.push(`stance  ${stance(view.record.marks)}`, `because  ${view.record.because}`, 'rules  unchanged', 'next  accept with /dstack-accept')
 	return `${lines.join('\n')}\n`
 }
 
